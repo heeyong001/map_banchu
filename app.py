@@ -3,8 +3,9 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import random
+import os
 
-# [수정 1] GestureHandling 없을 때 에러 방지 (try-except)
+# [수정 1] GestureHandling 없을 때 에러 방지
 try:
     from folium.plugins import GestureHandling
     gesture_handling_available = True
@@ -40,7 +41,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. 데이터 사전 (순서 중요: 화정/성사 등 동네 이름이 고양/일산보다 위에 있어야 함)
+# 2. 데이터 사전
 # ==============================================================================
 
 REGION_MAPPING = {
@@ -59,11 +60,10 @@ CITY_COORDS = {
     # 1. [최우선] 특정 업체명
     "반추": [37.5186, 126.8913], "반추정보통신": [37.5186, 126.8913],
     
-    # [고양시 덕양구 상세] - 여기가 "고양"보다 무조건 먼저 와야 함
-    "화정": [37.6346, 126.8326], # 화정역 부근
-    "성사": [37.6533, 126.8430], # 원당역/성사동 부근
-    "삼송": [37.6530, 126.8950], "원흥": [37.6500, 126.8730], "덕양": [37.6380, 126.8330],
-    "행신": [37.6120, 126.8340], "능곡": [37.6190, 126.8210],
+    # [고양시 덕양구 상세]
+    "화정": [37.6346, 126.8326], "성사": [37.6533, 126.8430], "삼송": [37.6530, 126.8950], 
+    "원흥": [37.6500, 126.8730], "덕양": [37.6380, 126.8330],
+    "일산": [37.6600, 126.7700], "고양": [37.6600, 126.7700],
 
     # [경기 서남부 상세]
     "배곧": [37.3705, 126.7335], "정왕": [37.3450, 126.7400], "은행": [37.4360, 126.7970],
@@ -109,7 +109,7 @@ CITY_COORDS = {
     "상봉": [37.5954, 127.0858], "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "노원": [37.6542, 127.0568],
     "서부물류": [37.5113, 126.8373],
 
-    # [수도권 주요 시/군 - 상세 매칭 실패 시 여기로]
+    # [수도권 주요 시/군]
     "시흥": [37.3801, 126.8029], "안산": [37.3219, 126.8309], "부천": [37.5034, 126.7660], "김포": [37.6153, 126.7157], "광명": [37.4786, 126.8646],
     "수원": [37.2636, 127.0286], "화성": [37.1995, 126.8315], "오산": [37.1498, 127.0772], "평택": [36.9925, 127.1127], "안성": [37.0080, 127.2797],
     "군포": [37.3614, 126.9351], "산본": [37.3614, 126.9351], "의왕": [37.3447, 126.9739], "안양": [37.3943, 126.9568],
@@ -152,7 +152,6 @@ def get_region_category(text):
 def get_city_only(text):
     if pd.isna(text): return "미분류(서울)"
     text = str(text)
-    # CITY_COORDS의 순서대로 매칭 (상세 지역이 먼저 매칭됨)
     for city in CITY_COORDS.keys():
         if city in text:
             return city
@@ -189,7 +188,10 @@ def get_real_color(korean_color):
 # ==============================================================================
 @st.cache_data
 def load_data_optimized(file):
-    df = pd.read_excel(file, dtype=str)
+    if isinstance(file, str): # 파일 경로인 경우
+        df = pd.read_excel(file, dtype=str)
+    else: # 파일 객체인 경우
+        df = pd.read_excel(file, dtype=str)
     
     boyu_col = None
     for col in df.columns:
@@ -212,37 +214,59 @@ if 'filtered_data' not in st.session_state:
     st.session_state['filtered_data'] = None
 if 'selected_idx' not in st.session_state:
     st.session_state['selected_idx'] = None
-if 'main_df' not in st.session_state: # [핵심] 고정된 데이터 저장소
-    st.session_state['main_df'] = None
 
 # =========================================================
-# 1. [상단] 파일 업로드
+# 1. [상단] 파일 업로드 및 영구 저장 로직
 # =========================================================
+DATA_FILE = 'inventory_data.xlsx' # 데이터 파일
+META_FILE = 'file_info.txt' # [NEW] 파일 이름 저장용
+
 with st.expander("📂 데이터 업로드 (클릭하여 열기)", expanded=True):
-    uploaded_file = st.file_uploader("엑셀 파일을 올려주세요", type=["xlsx", "csv"])
+    col_up, col_del = st.columns([8, 2])
+    with col_up:
+        uploaded_file = st.file_uploader("엑셀 파일을 올려주세요 (자동 저장됨)", type=["xlsx", "csv"])
+    with col_del:
+        if st.button("🗑️ 데이터 초기화"):
+            if os.path.exists(DATA_FILE):
+                os.remove(DATA_FILE)
+            if os.path.exists(META_FILE):
+                os.remove(META_FILE)
+            st.session_state['filtered_data'] = None
+            st.cache_data.clear()
+            st.rerun()
 
-# [핵심 로직] 파일이 업로드되면 -> 새로운 파일인지 확인하고 -> Session State에 고정
+# [핵심 로직] 파일 업로드 시 -> 데이터와 '이름'을 함께 저장
 if uploaded_file:
-    # 이전에 로드한 파일과 이름이 다르면 새로 처리
-    if 'current_file_name' not in st.session_state or st.session_state['current_file_name'] != uploaded_file.name:
-        st.success(f"✅ 새로운 파일 로드: {uploaded_file.name}")
-        df_processed = load_data_optimized(uploaded_file)
-        
-        # 세션에 '영구 저장' (새 파일 올리기 전까지)
-        st.session_state['main_df'] = df_processed
-        st.session_state['current_file_name'] = uploaded_file.name
-        
-        # 필터 초기화
-        st.session_state['filtered_data'] = None
-        st.session_state['selected_idx'] = None
-    else:
-        # 파일 이름이 같으면 기존에 저장된 df 사용 (재연산 X)
-        pass
-
-# 저장된 데이터가 있으면 그걸 가져와서 화면 그리기
-if st.session_state['main_df'] is not None:
-    df = st.session_state['main_df']
+    # 1. 엑셀 파일 저장
+    with open(DATA_FILE, "wb") as f:
+        f.write(uploaded_file.getbuffer())
     
+    # 2. 파일 이름 저장 (NEW)
+    with open(META_FILE, "w", encoding="utf-8") as f:
+        f.write(uploaded_file.name)
+        
+    st.success(f"✅ [{uploaded_file.name}] 파일이 서버에 저장되었습니다.")
+    st.cache_data.clear()
+
+# [핵심 로직] 저장된 파일 불러오기 + 이름 표시
+df = None
+if os.path.exists(DATA_FILE):
+    try:
+        df = load_data_optimized(DATA_FILE)
+        
+        # 저장된 이름 읽어오기
+        saved_file_name = "이전 데이터"
+        if os.path.exists(META_FILE):
+            with open(META_FILE, "r", encoding="utf-8") as f:
+                saved_file_name = f.read().strip()
+                
+        if not uploaded_file:
+            st.info(f"📂 이전에 저장된 파일 [{saved_file_name}]을 불러왔습니다.")
+            
+    except Exception as e:
+        st.error(f"파일 로드 오류: {e}")
+
+if df is not None:
     col_map = {}
     for col in df.columns:
         clean_col = str(col).replace('▼', '').strip()
@@ -262,11 +286,18 @@ if st.session_state['main_df'] is not None:
                 target_col = col
                 break
 
-    real_boyu = col_map.get('보유처', df.columns[0]) # Fallback
-    real_model = col_map.get('모델명', df.columns[1])
+    if target_col:
+        col_map['target_col'] = target_col
+
+    if '보유처' not in col_map:
+        st.error("🚨 엑셀에 '보유처' 컬럼이 없습니다.")
+        st.stop()
+
+    real_boyu = col_map['보유처']
+    real_model = col_map.get('모델명', df.columns[0])
     real_color = col_map.get('색상', None)
     real_status = col_map.get('status', None)
-    real_target = target_col
+    real_target = col_map.get('target_col', None)
     
     # =========================================================
     # 2. 검색 조건
