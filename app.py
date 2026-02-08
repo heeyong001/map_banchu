@@ -115,8 +115,7 @@ CITY_COORDS = {
     "군포": [37.3614, 126.9351], "산본": [37.3614, 126.9351], "의왕": [37.3447, 126.9739], "안양": [37.3943, 126.9568],
     "이천": [37.2811, 127.4358], "여주": [37.2983, 127.6370], "광주": [37.4294, 127.2550], "성남": [37.4200, 127.1265], "용인": [37.2410, 127.1775], "하남": [37.5393, 127.2149],
     "동두천": [37.9036, 127.0604], "구리": [37.6033, 127.1436], "남양주": [37.6360, 127.2165], "의정부": [37.7381, 127.0337], "양주": [37.7853, 127.0458], "포천": [37.8949, 127.2003],
-    "파주": [37.7600, 126.7800], "일산": [37.6600, 126.7700], 
-    "고양": [37.6600, 126.7700], # 고양시는 가장 나중에 매칭 (화정/성사가 아닐 때만)
+    "파주": [37.7600, 126.7800], "일산": [37.6600, 126.7700], "고양": [37.6600, 126.7700],
     "인천": [37.4563, 126.7052],
 
     # [서울 구]
@@ -213,6 +212,8 @@ if 'filtered_data' not in st.session_state:
     st.session_state['filtered_data'] = None
 if 'selected_idx' not in st.session_state:
     st.session_state['selected_idx'] = None
+if 'main_df' not in st.session_state: # [핵심] 고정된 데이터 저장소
+    st.session_state['main_df'] = None
 
 # =========================================================
 # 1. [상단] 파일 업로드
@@ -220,15 +221,27 @@ if 'selected_idx' not in st.session_state:
 with st.expander("📂 데이터 업로드 (클릭하여 열기)", expanded=True):
     uploaded_file = st.file_uploader("엑셀 파일을 올려주세요", type=["xlsx", "csv"])
 
+# [핵심 로직] 파일이 업로드되면 -> 새로운 파일인지 확인하고 -> Session State에 고정
 if uploaded_file:
-    st.success(f"✅ 현재 파일: {uploaded_file.name}")
-
-    if 'last_file' not in st.session_state or st.session_state['last_file'] != uploaded_file.name:
+    # 이전에 로드한 파일과 이름이 다르면 새로 처리
+    if 'current_file_name' not in st.session_state or st.session_state['current_file_name'] != uploaded_file.name:
+        st.success(f"✅ 새로운 파일 로드: {uploaded_file.name}")
+        df_processed = load_data_optimized(uploaded_file)
+        
+        # 세션에 '영구 저장' (새 파일 올리기 전까지)
+        st.session_state['main_df'] = df_processed
+        st.session_state['current_file_name'] = uploaded_file.name
+        
+        # 필터 초기화
         st.session_state['filtered_data'] = None
         st.session_state['selected_idx'] = None
-        st.session_state['last_file'] = uploaded_file.name
+    else:
+        # 파일 이름이 같으면 기존에 저장된 df 사용 (재연산 X)
+        pass
 
-    df = load_data_optimized(uploaded_file)
+# 저장된 데이터가 있으면 그걸 가져와서 화면 그리기
+if st.session_state['main_df'] is not None:
+    df = st.session_state['main_df']
     
     col_map = {}
     for col in df.columns:
@@ -249,18 +262,11 @@ if uploaded_file:
                 target_col = col
                 break
 
-    if target_col:
-        col_map['target_col'] = target_col
-
-    if '보유처' not in col_map:
-        st.error("🚨 엑셀에 '보유처' 컬럼이 없습니다.")
-        st.stop()
-
-    real_boyu = col_map['보유처']
-    real_model = col_map.get('모델명', df.columns[0])
+    real_boyu = col_map.get('보유처', df.columns[0]) # Fallback
+    real_model = col_map.get('모델명', df.columns[1])
     real_color = col_map.get('색상', None)
     real_status = col_map.get('status', None)
-    real_target = col_map.get('target_col', None)
+    real_target = target_col
     
     # =========================================================
     # 2. 검색 조건
@@ -399,14 +405,11 @@ if uploaded_file:
                     center_lon = map_df['cached_lon'].mean()
                     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
                     
-                    # [핵심] GestureHandling 추가 (가능한 경우에만)
                     if gesture_handling_available:
                         try:
                             GestureHandling().add_to(m)
                         except:
-                            pass # 혹시라도 실패하면 무시하고 진행
-                    else:
-                        st.toast("⚠️ 모바일 스크롤 기능을 쓰려면 터미널에 'pip install folium --upgrade'를 입력하세요!", icon="📢")
+                            pass
 
                     for idx, row in map_df.iterrows():
                         current_color_name = row[real_color] if real_color else 'blue'
