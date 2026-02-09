@@ -30,12 +30,10 @@ st.markdown("""
             padding-right: 1rem !important;
         }
         
-        /* [모바일 최적화] 리스트 아이템 간격 축소 */
         div[data-testid="stVerticalBlock"] > div {
             gap: 0.5rem !important;
         }
         
-        /* [모바일 최적화] 버튼 스타일: 작고 컴팩트하게 */
         div.stButton > button {
             width: 100%;
             height: auto;
@@ -79,10 +77,17 @@ st.markdown("""
             color: #666;
         }
         
-        /* 구분선 여백 축소 */
         hr {
             margin-top: 0.5em !important;
             margin-bottom: 0.5em !important;
+        }
+        
+        /* [모바일] Expander(접이식 메뉴) 스타일 */
+        .streamlit-expanderHeader {
+            font-size: 14px;
+            font-weight: bold;
+            background-color: #f8f9fa;
+            border-radius: 5px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -218,6 +223,9 @@ def get_real_color(korean_color):
     elif '레드' in c or 'red' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
+def small_text(text):
+    return f"<div class='small-text'>{text}</div>"
+
 # ==============================================================================
 # [핵심] 최적화된 데이터 로드 함수
 # ==============================================================================
@@ -338,45 +346,45 @@ if df is not None:
     real_target = col_map.get('target_col', None)
     
     # =========================================================
-    # 2. 검색 조건
+    # 2. 검색 조건 (접이식 메뉴 적용)
     # =========================================================
-    st.markdown("##### 🔍 검색 조건")
-    
-    row1_c1, row1_c2 = st.columns(2)
-    with row1_c1:
-        all_models = df[real_model].unique().tolist()
-        selected_models = st.multiselect("모델 선택 (필수)", all_models, default=[], placeholder="모델을 선택해주세요")
-        
-    with row1_c2:
-        all_owners = sorted(df[real_boyu].unique().tolist())
-        selected_owners = st.multiselect("보유처 선택", ["전체"] + all_owners, default=["전체"])
+    # [핵심] Expander 적용으로 모바일 공간 확보
+    with st.expander("🔍 검색 조건 설정 (클릭하여 열기/닫기)", expanded=True):
+        row1_c1, row1_c2 = st.columns(2)
+        with row1_c1:
+            all_models = df[real_model].unique().tolist()
+            selected_models = st.multiselect("모델 선택 (필수)", all_models, default=[], placeholder="모델을 선택해주세요")
+            
+        with row1_c2:
+            all_owners = sorted(df[real_boyu].unique().tolist())
+            selected_owners = st.multiselect("보유처 선택", ["전체"] + all_owners, default=[], placeholder="미선택 시 전체")
 
-    row2_c1, row2_c2, row2_c3 = st.columns([3, 3, 2])
-    with row2_c1:
-        if real_color:
-            if selected_models:
-                filtered_models_df = df[df[real_model].isin(selected_models)]
-                available_colors = ["전체"] + sorted(filtered_models_df[real_color].unique().tolist())
+        row2_c1, row2_c2, row2_c3 = st.columns([3, 3, 2])
+        with row2_c1:
+            if real_color:
+                if selected_models:
+                    filtered_models_df = df[df[real_model].isin(selected_models)]
+                    available_colors = ["전체"] + sorted(filtered_models_df[real_color].unique().tolist())
+                else:
+                    available_colors = ["전체"]
+                selected_colors = st.multiselect("색상 선택", available_colors, default=[], placeholder="미선택 시 전체")
             else:
-                available_colors = ["전체"]
-            selected_colors = st.multiselect("색상 선택", available_colors, default=["전체"])
-        else:
-            selected_colors = []
-            st.write("색상 정보 없음")
+                selected_colors = []
+                st.write("색상 정보 없음")
 
-    with row2_c2:
-        region_order = ["전체", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
-        selected_regions = st.multiselect("지역 선택", region_order, default=["전체"])
+        with row2_c2:
+            region_order = ["전체", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
+            selected_regions = st.multiselect("지역 선택", region_order, default=[], placeholder="미선택 시 전체")
 
-    with row2_c3:
-        st.write("") 
-        search_clicked = st.button("🚀 조회", type="primary", use_container_width=True)
+        with row2_c3:
+            st.write("") 
+            search_clicked = st.button("🚀 조회", type="primary", use_container_width=True)
 
     # =========================================================
     # 3. 조회 및 결과
     # =========================================================
     if search_clicked:
-        if not selected_models and "전체" in selected_owners:
+        if not selected_models and (not selected_owners or "전체" in selected_owners):
              st.warning("⚠️ 모델을 최소 1개 이상 선택해주세요. (데이터 과부하 방지)")
              st.session_state['filtered_data'] = None
         else:
@@ -385,16 +393,14 @@ if df is not None:
             else:
                 filtered_df = df
 
-            if "전체" not in selected_owners:
+            if selected_owners and "전체" not in selected_owners:
                 filtered_df = filtered_df[filtered_df[real_boyu].isin(selected_owners)]
             
-            if real_color and selected_colors:
-                if "전체" not in selected_colors:
-                    filtered_df = filtered_df[filtered_df[real_color].isin(selected_colors)]
+            if real_color and selected_colors and "전체" not in selected_colors:
+                filtered_df = filtered_df[filtered_df[real_color].isin(selected_colors)]
                 
-            if selected_regions:
-                if "전체" not in selected_regions:
-                    filtered_df = filtered_df[filtered_df['cached_region'].isin(selected_regions)]
+            if selected_regions and "전체" not in selected_regions:
+                filtered_df = filtered_df[filtered_df['cached_region'].isin(selected_regions)]
 
             filtered_df = filtered_df.sort_values(by=real_boyu, ascending=True)
 
@@ -419,7 +425,7 @@ if df is not None:
         if not list_df.empty:
             left_col, right_col = st.columns([6, 4]) 
 
-            # [우측] 리스트 (모바일 최적화: 2줄 보기)
+            # [우측] 리스트 (모바일 최적화)
             with right_col:
                 st.subheader(f"📋 검색 결과 ({len(list_df)}건)")
                 
@@ -432,22 +438,15 @@ if df is not None:
 
                 selected_idx = st.session_state['selected_idx']
                 
-                # [모바일 최적화] 헤더 제거 (직관적으로 변경)
-                # st.columns 헤더 삭제됨
-
                 with st.container(height=500):
                     for idx, row in display_df.iterrows():
-                        # [핵심] 리스트 아이템 레이아웃 (8:2 비율)
-                        # 왼쪽: 정보 (2줄) / 오른쪽: 버튼 (📍)
                         c_info, c_btn = st.columns([8, 2])
                         
                         is_selected = (selected_idx == idx)
                         bg_style = "background-color: #ffecec;" if is_selected else ""
                         
                         with c_info:
-                            # 1줄: 보유처 이름 (진하게)
                             store_name = row[real_boyu]
-                            # 2줄: 모델 | 색상 | 상태 | 날짜
                             details = f"{row[real_model]} | {row[real_color] if real_color else '-'} | {row[real_status] if real_status else '-'} | {row[real_target] if real_target else '-'}"
                             
                             st.markdown(f"""
@@ -462,7 +461,7 @@ if df is not None:
                                 st.session_state['selected_idx'] = idx
                                 st.rerun()
                         
-                        st.divider() # 얇은 구분선
+                        st.divider()
 
             # [좌측] 지도
             with left_col:
@@ -489,7 +488,6 @@ if df is not None:
                     center_lat = map_df['cached_lat'].mean()
                     center_lon = map_df['cached_lon'].mean()
                     
-                    # [모바일 최적화] 지도 높이 450px
                     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
                     
                     if gesture_handling_available:
@@ -536,7 +534,6 @@ if df is not None:
                         full_copy_text = "\n".join(copy_lines)
                         safe_json_text = json.dumps(full_copy_text)
 
-                        # [모바일 친화적 복사]
                         popup_html = f"""
                         <div id="popup-{random.randint(0,100000)}" style="cursor: pointer; width: 100%;"
                              onclick='
