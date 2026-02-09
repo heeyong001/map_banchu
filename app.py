@@ -18,18 +18,23 @@ except ImportError:
 # 1. 화면 설정
 st.set_page_config(layout="wide", page_title="재고 현황 대시보드")
 
-# 스타일 CSS
+# ==============================================================================
+# [핵심] CSS 스타일 최적화 (모바일 폰트/크기 조정)
+# ==============================================================================
 st.markdown("""
     <style>
         .block-container {
             padding-top: 1rem !important;
+            padding-bottom: 2rem !important;
         }
+        /* 버튼 스타일 미세 조정 */
         div[data-testid="stVerticalBlock"] button {
             text-align: left !important;
             justify-content: flex-start !important;
             border: none !important;
             background: transparent !important;
             padding-left: 0px !important;
+            font-size: 13px !important; /* 리스트 버튼 글씨 축소 */
         }
         div[data-testid="stVerticalBlock"] button:hover {
             background: #f0f2f6 !important;
@@ -40,24 +45,33 @@ st.markdown("""
             color: red !important;
             font-weight: bold !important;
         }
-        /* 팝업 테이블 스타일 */
+        
+        /* 팝업 테이블 스타일 (모바일용 초소형) */
         .popup-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 12px;
+            font-size: 11px !important; /* 팝업 글씨 축소 */
             font-family: sans-serif;
         }
         .popup-table th {
             background-color: #f2f2f2;
             border-bottom: 1px solid #ddd;
-            padding: 4px;
+            padding: 2px 4px !important; /* 패딩 축소 */
             text-align: center;
             font-weight: bold;
         }
         .popup-table td {
             border-bottom: 1px solid #ddd;
-            padding: 4px;
+            padding: 2px 4px !important; /* 패딩 축소 */
             text-align: center;
+        }
+        
+        /* 모바일 리스트 텍스트 스타일 */
+        .small-text {
+            font-size: 12px;
+            white-space: nowrap; /* 줄바꿈 방지 */
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -79,7 +93,7 @@ REGION_MAPPING = {
 }
 
 CITY_COORDS = {
-    # 1. [최우선] 특정 업체명 (좌표 수정 완료)
+    # [좌표 고정] 반추정보통신: 문래동 에이스하이테크시티
     "반추": [37.5156, 126.8950], "반추정보통신": [37.5156, 126.8950], 
     
     "신원": [37.6744, 126.8653], 
@@ -162,15 +176,12 @@ def get_city_only(text):
 def get_coordinate_smart_jitter(store_name, base_lat, base_lon):
     if pd.isna(store_name): return base_lat, base_lon
     
-    # 1. 반추정보통신은 Jitter(흔들기) 금지 -> 무조건 고정 좌표
     if "반추" in str(store_name):
         return base_lat, base_lon
         
-    # 2. 일반 매장: 가게 이름을 숫자로 변환(Hash)하여 고유한 위치 오프셋 생성
     hash_obj = hashlib.md5(str(store_name).encode())
     hash_int = int(hash_obj.hexdigest(), 16)
     
-    # -0.005 ~ +0.005 사이의 랜덤하지만 고정된 값을 생성
     random.seed(hash_int) 
     lat_offset = random.uniform(-0.005, 0.005)
     lon_offset = random.uniform(-0.005, 0.005)
@@ -199,6 +210,10 @@ def get_real_color(korean_color):
     elif '레드' in c or 'red' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
+# [UI 헬퍼] 모바일 최적화 텍스트 생성
+def small_text(text):
+    return f"<div class='small-text'>{text}</div>"
+
 # ==============================================================================
 # [핵심] 최적화된 데이터 로드 함수
 # ==============================================================================
@@ -216,17 +231,12 @@ def load_data_optimized(file):
             break
             
     if boyu_col:
-        # [수정] 보유처 이름 앞뒤 공백 제거
         df[boyu_col] = df[boyu_col].astype(str).str.strip()
-        
-        # [핵심] '반추'가 들어간 이름은 모두 '반추정보통신'으로 강제 통일
         df.loc[df[boyu_col].str.contains("반추", na=False), boyu_col] = "반추정보통신"
         
-        # 1. 기본 좌표 찾기
         clean_names = df[boyu_col].str.replace(r'^[^-\s]*\d[^-\s]*-', '', regex=True)
         base_coords = clean_names.apply(get_base_coordinate)
         
-        # 2. Smart Jitter 적용 (가게 이름 기준)
         final_lats = []
         final_lons = []
         for i, row in df.iterrows():
@@ -331,11 +341,9 @@ if df is not None:
     row1_c1, row1_c2 = st.columns(2)
     with row1_c1:
         all_models = df[real_model].unique().tolist()
-        # [최적화] 모델 미선택 상태로 시작
         selected_models = st.multiselect("모델 선택 (필수)", all_models, default=[], placeholder="모델을 선택해주세요")
         
     with row1_c2:
-        # [기능 추가] 보유처 필터
         all_owners = sorted(df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처 선택", ["전체"] + all_owners, default=["전체"])
 
@@ -411,14 +419,15 @@ if df is not None:
             with right_col:
                 st.subheader(f"📋 검색 결과 ({len(list_df)}건)")
                 
-                if not map_df.empty:
-                    unclassified_df = map_df[map_df['cached_city'] == '미분류(서울)']
-                    if not unclassified_df.empty:
-                        st.warning(f"⚠️ 위치 미확인 {len(unclassified_df)}건")
-                        with st.expander("🚨 리스트 확인"):
-                            st.dataframe(unclassified_df[[real_boyu, real_model, 'cached_city']], hide_index=True)
+                MAX_LIST_ITEMS = 100
+                if len(list_df) > MAX_LIST_ITEMS:
+                    st.warning(f"⚠️ 검색 결과가 많아 상위 {MAX_LIST_ITEMS}개만 리스트에 표시합니다.")
+                    display_df = list_df.head(MAX_LIST_ITEMS)
+                else:
+                    display_df = list_df
 
                 h1, h2, h3, h4, h5, h6 = st.columns([2.8, 2.2, 1.5, 1.5, 1.5, 2.0])
+                # 헤더 글씨 축소는 CSS에서 일괄 처리됨
                 h1.markdown("**보유처 (클릭)**")
                 h2.markdown("**모델명**")
                 h3.markdown("**색상**")
@@ -430,17 +439,7 @@ if df is not None:
                 st.divider()
 
                 selected_idx = st.session_state['selected_idx']
-                display_df = list_df.copy()
-                if selected_idx is not None and selected_idx in display_df.index:
-                    sel_row = display_df.loc[[selected_idx]]
-                    others = display_df.drop(selected_idx)
-                    display_df = pd.concat([sel_row, others])
-
-                MAX_LIST_ITEMS = 100
-                if len(display_df) > MAX_LIST_ITEMS:
-                    st.warning(f"⚠️ 검색 결과가 너무 많아 상위 {MAX_LIST_ITEMS}개만 리스트에 표시합니다.")
-                    display_df = display_df.head(MAX_LIST_ITEMS)
-
+                
                 with st.container(height=500):
                     for idx, row in display_df.iterrows():
                         c1, c2, c3, c4, c5, c6 = st.columns([2.8, 2.2, 1.5, 1.5, 1.5, 2.0])
@@ -452,43 +451,53 @@ if df is not None:
                             st.session_state['selected_idx'] = idx
                             st.rerun()
 
-                        c2.write(row[real_model])
-                        c3.write(row[real_color] if real_color else "-")
+                        # [모바일 최적화] 리스트 글씨 크기 CSS 적용
+                        c2.markdown(small_text(row[real_model]), unsafe_allow_html=True)
+                        c3.markdown(small_text(row[real_color] if real_color else "-"), unsafe_allow_html=True)
                         
                         status_val = row[real_status] if real_status else "-"
                         if str(status_val) == "nan": status_val = "-"
-                        if status_val != "정상" and status_val != "-":
-                            c4.markdown(f"<span style='background-color: #ffe6e6; color: red; padding: 3px; border-radius: 5px; font-weight: bold;'>{status_val}</span>", unsafe_allow_html=True)
-                        else:
-                            c4.write(status_val)
-
-                        c5.write(row['cached_region'])
+                        c4.markdown(small_text(status_val), unsafe_allow_html=True)
+                        c5.markdown(small_text(row['cached_region']), unsafe_allow_html=True)
                         
                         val = row[real_target] if real_target else "-"
                         if str(val) == 'nan': val = "-"
-                        c6.write(val)
+                        c6.markdown(small_text(val), unsafe_allow_html=True)
 
             # [좌측] 지도
             with left_col:
                 selected_index = st.session_state['selected_idx']
 
-                if selected_index is not None and selected_index not in map_df.index:
-                     st.warning("선택하신 항목은 '도매' 데이터이므로 지도에 표시되지 않습니다.")
-                     selected_index = None
+                # [★ 신규] 지도 상단 '복사 전용 패널'
+                if selected_index is not None and selected_index in list_df.index:
+                    selected_row = list_df.loc[selected_index]
+                    target_store_name = selected_row[real_boyu]
+                    
+                    store_inventory = list_df[list_df[real_boyu] == target_store_name]
+                    
+                    copy_text_lines = [f"[{target_store_name}]"]
+                    for _, row in store_inventory.iterrows():
+                        c_name = row[real_color] if row[real_color] else "-"
+                        copy_text_lines.append(f"{row[real_model]} {c_name}")
+                    
+                    final_copy_text = "\n".join(copy_text_lines)
+                    
+                    st.info(f"📍 **{target_store_name}** 선택됨")
+                    st.code(final_copy_text, language='text')
 
                 if not map_df.empty:
                     center_lat = map_df['cached_lat'].mean()
                     center_lon = map_df['cached_lon'].mean()
+                    
+                    # [모바일 최적화] 지도 높이 450px로 축소 (스크롤 확보)
                     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
                     
-                    # [핵심] GestureHandling 안전하게 적용
                     if gesture_handling_available:
                         try:
                             GestureHandling().add_to(m)
                         except:
                             pass
                     
-                    # [핵심] 1. 좌표 + 보유처 이름(real_boyu) 기준 그룹화
                     grouped_stores = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
 
                     for (lat, lon, store_name), group_df in grouped_stores:
@@ -497,15 +506,14 @@ if df is not None:
                         if len(unique_colors) == 1:
                             current_color_name = unique_colors[0]
                             icon_color_hex, _ = get_real_color(current_color_name)
-                            # 화이트 모델 배경 (투명도 0.4)
                             if icon_color_hex.upper() == '#FFFFFF':
-                                bg_color = "rgba(0, 0, 0, 0.4)" # 연한 검정
+                                bg_color = "rgba(0, 0, 0, 0.4)"
                                 icon_color = "white"
                             else:
                                 bg_color = "rgba(255, 255, 255, 0.8)"
                                 icon_color = icon_color_hex
                         else:
-                            bg_color = "rgba(128, 0, 128, 0.8)" # 보라색(혼합)
+                            bg_color = "rgba(128, 0, 128, 0.8)"
                             icon_color = "white"
 
                         if selected_index in group_df.index:
@@ -515,7 +523,6 @@ if df is not None:
                         else:
                             z_index = 1
 
-                        # [복사 기능] 텍스트 생성
                         copy_lines = [f"[{store_name}]"]
                         table_rows = ""
                         color_counts = group_df.groupby([real_model, real_color]).size().reset_index(name='count')
@@ -526,34 +533,33 @@ if df is not None:
                             table_rows += f"<tr><td>{row[real_model]}</td><td>{c_name}</td><td>{qty}</td></tr>"
                             copy_lines.append(f"{row[real_model]} {c_name} {qty}대")
 
-                        # [핵심 수정] JSON 직렬화로 안전하게 자바스크립트에 전달 (따옴표/줄바꿈 에러 방지)
                         full_copy_text = "\n".join(copy_lines)
-                        safe_json_text = json.dumps(full_copy_text) # 문자열을 안전한 JS 포맷으로 변환
+                        safe_json_text = json.dumps(full_copy_text)
 
-                        # [모바일 친화적 복사] window.prompt 사용 -> 사용자가 수동 복사하도록 유도 (가장 호환성 높음)
+                        # [모바일 친화적 복사] window.prompt + 문구 변경 + 팝업 너비 축소
                         popup_html = f"""
-                        <div id="popup-{random.randint(0,100000)}" style="cursor: pointer;"
+                        <div id="popup-{random.randint(0,100000)}" style="cursor: pointer; width: 100%;"
                              onclick='
                                 var text = {safe_json_text};
-                                window.prompt("텍스트를 길게 눌러 복사하세요 (모바일) / Ctrl+C (PC)", text);
+                                window.prompt("복사하려면 버튼을 누르세요 (모바일) / Ctrl+C (PC)", text);
                              '>
-                            <h4 style='margin: 5px 0; color: #333;'>{store_name}</h4>
-                            <div style='font-size: 12px; color: #666; margin-bottom: 5px;'>
+                            <h4 style='margin: 5px 0; font-size: 14px; color: #333;'>{store_name}</h4>
+                            <div style='font-size: 10px; color: #666; margin-bottom: 5px;'>
                                 {group_df['cached_region'].iloc[0]} ({group_df['cached_city'].iloc[0]})
                             </div>
                             <table class="popup-table">
                                 <thead>
                                     <tr>
-                                        <th>모델명</th>
+                                        <th>모델</th>
                                         <th>색상</th>
-                                        <th>수량</th>
+                                        <th>수</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {table_rows}
                                 </tbody>
                             </table>
-                            <div style='text-align: right; margin-top: 5px; font-weight: bold;'>
+                            <div style='text-align: right; margin-top: 5px; font-weight: bold; font-size: 11px;'>
                                 총계: {len(group_df)}대
                             </div>
                             <div style='text-align: center; color: blue; font-size: 10px; margin-top: 5px;'>
@@ -562,7 +568,6 @@ if df is not None:
                         </div>
                         """
                         
-                        # [디자인] 테두리 제거 & 그림자 효과
                         icon_html = f"""
                         <div style="
                             background-color: {bg_color};
@@ -579,19 +584,20 @@ if df is not None:
                         </div>
                         """
                         
+                        # [핵심] 팝업 크기 max_width=230으로 축소
                         folium.Marker(
                             location=[lat, lon],
                             icon=folium.DivIcon(html=icon_html),
-                            popup=folium.Popup(popup_html, max_width=350),
+                            popup=folium.Popup(popup_html, max_width=230),
                             z_index_offset=z_index
                         ).add_to(m)
 
-                    # [핵심] 리프레시 방지를 위해 반환값 제거 (지도 클릭 시 앱 재실행 차단)
-                    st_folium(m, width="100%", height=700, returned_objects=[])
+                    # [핵심] 리프레시 방지
+                    st_folium(m, width="100%", height=450, returned_objects=[])
 
                 else:
                      m = folium.Map(location=[37.5665, 126.9780], zoom_start=7)
-                     st_folium(m, width="100%", height=700, returned_objects=[])
+                     st_folium(m, width="100%", height=450, returned_objects=[])
                      st.info("💡 지도에 표시할 데이터가 없습니다.")
 
         else:
