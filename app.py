@@ -19,59 +19,70 @@ except ImportError:
 st.set_page_config(layout="wide", page_title="재고 현황 대시보드")
 
 # ==============================================================================
-# [핵심] CSS 스타일 최적화 (모바일 폰트/크기 조정)
+# [핵심] CSS 스타일 최적화 (모바일 리스트 & 드래그 개선)
 # ==============================================================================
 st.markdown("""
     <style>
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 2rem !important;
-        }
-        /* 버튼 스타일 미세 조정 */
-        div[data-testid="stVerticalBlock"] button {
-            text-align: left !important;
-            justify-content: flex-start !important;
-            border: none !important;
-            background: transparent !important;
-            padding-left: 0px !important;
-            font-size: 13px !important; /* 리스트 버튼 글씨 축소 */
-        }
-        div[data-testid="stVerticalBlock"] button:hover {
-            background: #f0f2f6 !important;
-            color: black !important;
-        }
-        div[data-testid="stVerticalBlock"] button:focus {
-            background: #ffecec !important;
-            color: red !important;
-            font-weight: bold !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
         }
         
-        /* 팝업 테이블 스타일 (모바일용 초소형) */
+        /* [모바일 최적화] 리스트 아이템 간격 축소 */
+        div[data-testid="stVerticalBlock"] > div {
+            gap: 0.5rem !important;
+        }
+        
+        /* [모바일 최적화] 버튼 스타일: 작고 컴팩트하게 */
+        div.stButton > button {
+            width: 100%;
+            height: auto;
+            padding: 0.3rem 0.5rem;
+            font-size: 14px;
+            line-height: 1.2;
+        }
+
+        /* 팝업 테이블 스타일 */
         .popup-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 11px !important; /* 팝업 글씨 축소 */
+            font-size: 11px !important;
             font-family: sans-serif;
         }
         .popup-table th {
             background-color: #f2f2f2;
             border-bottom: 1px solid #ddd;
-            padding: 2px 4px !important; /* 패딩 축소 */
+            padding: 2px 4px !important;
             text-align: center;
             font-weight: bold;
         }
         .popup-table td {
             border-bottom: 1px solid #ddd;
-            padding: 2px 4px !important; /* 패딩 축소 */
+            padding: 2px 4px !important;
             text-align: center;
         }
         
-        /* 모바일 리스트 텍스트 스타일 */
-        .small-text {
-            font-size: 12px;
-            white-space: nowrap; /* 줄바꿈 방지 */
+        /* 리스트 텍스트 스타일 */
+        .list-title {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 2px;
+            white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .list-sub {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* 구분선 여백 축소 */
+        hr {
+            margin-top: 0.5em !important;
+            margin-bottom: 0.5em !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -93,9 +104,7 @@ REGION_MAPPING = {
 }
 
 CITY_COORDS = {
-    # [좌표 고정] 반추정보통신: 문래동 에이스하이테크시티
     "반추": [37.5156, 126.8950], "반추정보통신": [37.5156, 126.8950], 
-    
     "신원": [37.6744, 126.8653], 
     "화정": [37.6346, 126.8326], "성사": [37.6533, 126.8430], "삼송": [37.6530, 126.8950], 
     "원흥": [37.6500, 126.8730], "덕양": [37.6380, 126.8330],
@@ -172,7 +181,6 @@ def get_city_only(text):
             return city
     return "미분류(서울)"
 
-# [핵심] "같은 가게 = 같은 위치", "다른 가게 = 다른 위치" (Smart Jitter)
 def get_coordinate_smart_jitter(store_name, base_lat, base_lon):
     if pd.isna(store_name): return base_lat, base_lon
     
@@ -209,10 +217,6 @@ def get_real_color(korean_color):
     elif '퍼플' in c or '보라' in c: return '#800080', '#FFFFFF' 
     elif '레드' in c or 'red' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
-
-# [UI 헬퍼] 모바일 최적화 텍스트 생성
-def small_text(text):
-    return f"<div class='small-text'>{text}</div>"
 
 # ==============================================================================
 # [핵심] 최적화된 데이터 로드 함수
@@ -415,60 +419,56 @@ if df is not None:
         if not list_df.empty:
             left_col, right_col = st.columns([6, 4]) 
 
-            # [우측] 리스트
+            # [우측] 리스트 (모바일 최적화: 2줄 보기)
             with right_col:
                 st.subheader(f"📋 검색 결과 ({len(list_df)}건)")
                 
                 MAX_LIST_ITEMS = 100
                 if len(list_df) > MAX_LIST_ITEMS:
-                    st.warning(f"⚠️ 검색 결과가 많아 상위 {MAX_LIST_ITEMS}개만 리스트에 표시합니다.")
+                    st.warning(f"⚠️ 상위 {MAX_LIST_ITEMS}개만 표시합니다.")
                     display_df = list_df.head(MAX_LIST_ITEMS)
                 else:
                     display_df = list_df
 
-                h1, h2, h3, h4, h5, h6 = st.columns([2.8, 2.2, 1.5, 1.5, 1.5, 2.0])
-                # 헤더 글씨 축소는 CSS에서 일괄 처리됨
-                h1.markdown("**보유처 (클릭)**")
-                h2.markdown("**모델명**")
-                h3.markdown("**색상**")
-                h4.markdown("**재고상태**") 
-                h5.markdown("**지역**")
-                
-                date_header = real_target if real_target else "출고일(미확인)"
-                h6.markdown(f"**{date_header}**")
-                st.divider()
-
                 selected_idx = st.session_state['selected_idx']
                 
+                # [모바일 최적화] 헤더 제거 (직관적으로 변경)
+                # st.columns 헤더 삭제됨
+
                 with st.container(height=500):
                     for idx, row in display_df.iterrows():
-                        c1, c2, c3, c4, c5, c6 = st.columns([2.8, 2.2, 1.5, 1.5, 1.5, 2.0])
+                        # [핵심] 리스트 아이템 레이아웃 (8:2 비율)
+                        # 왼쪽: 정보 (2줄) / 오른쪽: 버튼 (📍)
+                        c_info, c_btn = st.columns([8, 2])
                         
                         is_selected = (selected_idx == idx)
-                        btn_label = f"🔴 {row[real_boyu]}" if is_selected else str(row[real_boyu])
+                        bg_style = "background-color: #ffecec;" if is_selected else ""
                         
-                        if c1.button(btn_label, key=f"btn_{idx}", use_container_width=True):
-                            st.session_state['selected_idx'] = idx
-                            st.rerun()
-
-                        # [모바일 최적화] 리스트 글씨 크기 CSS 적용
-                        c2.markdown(small_text(row[real_model]), unsafe_allow_html=True)
-                        c3.markdown(small_text(row[real_color] if real_color else "-"), unsafe_allow_html=True)
+                        with c_info:
+                            # 1줄: 보유처 이름 (진하게)
+                            store_name = row[real_boyu]
+                            # 2줄: 모델 | 색상 | 상태 | 날짜
+                            details = f"{row[real_model]} | {row[real_color] if real_color else '-'} | {row[real_status] if real_status else '-'} | {row[real_target] if real_target else '-'}"
+                            
+                            st.markdown(f"""
+                            <div style='{bg_style} padding: 2px;'>
+                                <div class='list-title'>{store_name}</div>
+                                <div class='list-sub'>{details}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                        with c_btn:
+                            if st.button("📍", key=f"btn_{idx}"):
+                                st.session_state['selected_idx'] = idx
+                                st.rerun()
                         
-                        status_val = row[real_status] if real_status else "-"
-                        if str(status_val) == "nan": status_val = "-"
-                        c4.markdown(small_text(status_val), unsafe_allow_html=True)
-                        c5.markdown(small_text(row['cached_region']), unsafe_allow_html=True)
-                        
-                        val = row[real_target] if real_target else "-"
-                        if str(val) == 'nan': val = "-"
-                        c6.markdown(small_text(val), unsafe_allow_html=True)
+                        st.divider() # 얇은 구분선
 
             # [좌측] 지도
             with left_col:
                 selected_index = st.session_state['selected_idx']
 
-                # [★ 신규] 지도 상단 '복사 전용 패널'
+                # [상단 복사 패널]
                 if selected_index is not None and selected_index in list_df.index:
                     selected_row = list_df.loc[selected_index]
                     target_store_name = selected_row[real_boyu]
@@ -489,7 +489,7 @@ if df is not None:
                     center_lat = map_df['cached_lat'].mean()
                     center_lon = map_df['cached_lon'].mean()
                     
-                    # [모바일 최적화] 지도 높이 450px로 축소 (스크롤 확보)
+                    # [모바일 최적화] 지도 높이 450px
                     m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
                     
                     if gesture_handling_available:
@@ -536,7 +536,7 @@ if df is not None:
                         full_copy_text = "\n".join(copy_lines)
                         safe_json_text = json.dumps(full_copy_text)
 
-                        # [모바일 친화적 복사] window.prompt + 문구 변경 + 팝업 너비 축소
+                        # [모바일 친화적 복사]
                         popup_html = f"""
                         <div id="popup-{random.randint(0,100000)}" style="cursor: pointer; width: 100%;"
                              onclick='
@@ -584,7 +584,6 @@ if df is not None:
                         </div>
                         """
                         
-                        # [핵심] 팝업 크기 max_width=230으로 축소
                         folium.Marker(
                             location=[lat, lon],
                             icon=folium.DivIcon(html=icon_html),
@@ -592,7 +591,6 @@ if df is not None:
                             z_index_offset=z_index
                         ).add_to(m)
 
-                    # [핵심] 리프레시 방지
                     st_folium(m, width="100%", height=450, returned_objects=[])
 
                 else:
