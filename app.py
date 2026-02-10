@@ -30,7 +30,6 @@ st.markdown("""
             padding-right: 0.5rem !important;
         }
         
-        /* 버튼 스타일 */
         div.stButton > button {
             width: 100%;
             height: auto;
@@ -69,6 +68,12 @@ st.markdown("""
 # ==============================================================================
 # 2. 데이터 사전 및 로직
 # ==============================================================================
+
+# [신규 기능] 모델 그룹 정의 (사용자가 요청한 묶음)
+MODEL_GROUPS = {
+    "SM-F766 (N0/NK 통합)": ["SM-F766N0", "SM-F766NK"],
+    "SM-S937 (N0/NK 통합)": ["SM-S937N0", "SM-S937NK"]
+}
 
 DISTRICT_CENTERS = {
     "강남": [37.5172, 127.0473], "서초": [37.4837, 127.0324], "송파": [37.5145, 127.1066], 
@@ -266,8 +271,33 @@ if df is not None:
     with st.expander("🔍 검색 조건", expanded=True):
         r1, r2 = st.columns(2)
         with r1:
-            all_models = df[real_model].unique().tolist()
-            selected_models = st.multiselect("모델", all_models, default=[], placeholder="선택하세요")
+            # [수정] 모델 리스트 생성 로직 (그룹 + 개별)
+            raw_models = df[real_model].unique().tolist()
+            display_options = []
+            grouped_items = []
+            
+            # 1. 그룹 추가
+            for label, items in MODEL_GROUPS.items():
+                if any(i in raw_models for i in items):
+                    display_options.append(label)
+                    grouped_items.extend(items)
+            
+            # 2. 나머지 개별 모델 추가 (그룹에 포함 안 된 것만)
+            for m in raw_models:
+                if m not in grouped_items:
+                    display_options.append(m)
+            
+            display_options.sort()
+            selected_models_display = st.multiselect("모델", display_options, default=[], placeholder="선택하세요")
+            
+            # [수정] 선택된 옵션을 실제 모델명 리스트로 변환
+            selected_models = []
+            for opt in selected_models_display:
+                if opt in MODEL_GROUPS:
+                    selected_models.extend(MODEL_GROUPS[opt])
+                else:
+                    selected_models.append(opt)
+
         with r2:
             all_owners = sorted(df[real_boyu].unique().tolist())
             selected_owners = st.multiselect("보유처", ["전체"] + all_owners, default=[], placeholder="미선택 시 전체")
@@ -280,7 +310,6 @@ if df is not None:
                     av_c = sorted(f_m[real_color].unique().tolist())
                 else: 
                     av_c = sorted(df[real_color].unique().tolist())
-                # [수정] placeholder: 전체 -> 선택하세요
                 selected_colors = st.multiselect("색상", av_c, default=[], placeholder="선택하세요")
             else: st.write("-")
         with r4:
@@ -385,6 +414,7 @@ if df is not None:
                             qty = r['cnt']
                             t_rows += f"<tr><td>{r[real_model]}</td><td>{cn}</td><td>{stt}</td><td>{qty}</td></tr>"
 
+                        # [팝업 개선] 글씨 11px, 중앙 정렬, 엑셀 격자, 너비 260px (모바일 최적화)
                         popup_html = f"""
                         <div style='width:100%; min-width:260px; font-family:sans-serif;'>
                             <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:5px; text-align:center;'>{name}</div>
