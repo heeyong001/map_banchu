@@ -16,60 +16,117 @@ except ImportError:
     gesture_handling_available = False
 
 # 1. 화면 설정
-st.set_page_config(layout="wide", page_title="재고 현황 대시보드")
+st.set_page_config(layout="wide", page_title="재고 현황 대시보드", initial_sidebar_state="collapsed")
 
 # ==============================================================================
-# [스타일] 엑셀 스타일 팝업 & 모바일 최적화
+# [중요] 세션 상태 초기화
+# ==============================================================================
+if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
+if 'selected_idx' not in st.session_state: st.session_state['selected_idx'] = None
+if 'clicked_store_name' not in st.session_state: st.session_state['clicked_store_name'] = None
+if 'search_clicked' not in st.session_state: st.session_state['search_clicked'] = False
+
+# ==============================================================================
+# [스타일] UI 디자인
 # ==============================================================================
 st.markdown("""
     <style>
         .block-container {
-            padding-top: 0.5rem !important;
-            padding-bottom: 2rem !important;
+            padding-top: 3.5rem !important; 
+            padding-bottom: 3rem !important;
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
         }
         
+        .file-status-bar {
+            background-color: #e8f5e9;
+            border: 1px solid #c8e6c9;
+            color: #2e7d32;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .search-container {
+            background-color: #ffffff;
+            padding: 15px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e0e0e0;
+            margin-bottom: 15px;
+        }
+
         div.stButton > button {
             width: 100%;
             height: auto;
-            padding: 0.2rem 0.4rem;
-            font-size: 13px;
-            margin-top: 2px !important;
+            padding: 0.6rem;
+            font-size: 15px;
+            font-weight: bold;
+            color: white;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
-        
-        .list-item-container { padding: 4px 4px; }
+
+        .list-item-container {
+            padding: 10px;
+            background-color: white;
+            border-radius: 8px;
+            border-left: 5px solid #764ba2;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        }
         .list-title {
             font-weight: bold;
-            font-size: 13px;
+            font-size: 14px;
             color: #333;
-            margin-bottom: 1px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            line-height: 1.2;
+            margin-bottom: 3px;
         }
         .list-sub {
-            font-size: 11px;
+            font-size: 12px;
             color: #666;
-            line-height: 1.2;
         }
         
-        .compact-hr { 
-            margin: 0px 0px 4px 0px !important; 
-            border: 0; 
-            border-top: 1px solid #eee; 
+        /* 팝업 테이블 (엑셀 스타일) */
+        .popup-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px !important;
+            font-family: sans-serif;
+            margin-top: 5px;
         }
-        
+        .popup-table th {
+            border: 1px solid #000;
+            background-color: #f0f0f0;
+            padding: 3px;
+            text-align: center;
+            font-weight: bold;
+            color: #000;
+            white-space: nowrap;
+        }
+        .popup-table td {
+            border: 1px solid #000;
+            padding: 3px;
+            text-align: center;
+            color: #000;
+        }
+
+        section[data-testid="stSidebar"] { background-color: #f8f9fa; }
         ul[data-testid="stVirtualDropdown"] { max-height: 200px !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. 데이터 사전 및 로직
+# 2. 데이터 사전
 # ==============================================================================
 
-# [신규 기능] 모델 그룹 정의 (사용자가 요청한 묶음)
 MODEL_GROUPS = {
     "SM-F766 (N0/NK 통합)": ["SM-F766N0", "SM-F766NK"],
     "SM-S937 (N0/NK 통합)": ["SM-S937N0", "SM-S937NK"]
@@ -213,37 +270,46 @@ def load_data_optimized(file):
         
     return df
 
-if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
-if 'selected_idx' not in st.session_state: st.session_state['selected_idx'] = None
-
 # =========================================================
 # 메인 UI
 # =========================================================
 DATA_FILE = 'inventory_data.xlsx'
 META_FILE = 'file_info.txt' 
 
-with st.expander("📂 데이터 업로드", expanded=True):
-    c1, c2 = st.columns([8, 2])
-    with c1: uploaded_file = st.file_uploader("엑셀 파일 업로드", type=["xlsx"])
-    with c2:
-        if st.button("🗑️ 초기화"):
-            if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
-            if os.path.exists(META_FILE): os.remove(META_FILE)
-            st.session_state['filtered_data'] = None
-            st.session_state['clicked_store_name'] = None
-            st.cache_data.clear()
-            st.rerun()
+# 1. 사이드바: 파일 업로드
+with st.sidebar:
+    st.header("📂 데이터 관리")
+    uploaded_file = st.file_uploader("파일 선택", type=["xlsx"])
+    st.markdown("---")
+    if st.button("🗑️ 데이터 초기화", type="secondary"):
+        if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
+        if os.path.exists(META_FILE): os.remove(META_FILE)
+        st.session_state.clear()
+        st.rerun()
 
 if uploaded_file:
-    with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
-    with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
-    st.success("저장 완료")
-    st.cache_data.clear()
+    try:
+        with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
+        with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
+        st.success("저장 완료")
+        st.cache_data.clear()
+        st.rerun()
+    except Exception as e:
+        st.error(f"⛔ 저장 실패: 파일을 닫고 다시 시도해주세요. ({e})")
 
 df = None
 if os.path.exists(DATA_FILE):
-    try: df = load_data_optimized(DATA_FILE)
-    except: st.error("파일 오류")
+    try: 
+        df = load_data_optimized(DATA_FILE)
+    except Exception as e:
+        st.error(f"데이터 로드 오류: {e}")
+
+# 2. 메인 화면: 상태바
+if os.path.exists(META_FILE):
+    with open(META_FILE, "r", encoding="utf-8") as f: f_name = f.read()
+    st.markdown(f"<div class='file-status-bar'><span>✅ 저장 완료</span><span>📂 사용 중: <b>{f_name}</b></span></div>", unsafe_allow_html=True)
+else:
+    st.markdown("<div class='file-status-bar' style='background-color:#fff3e0; color:#ef6c00;'><span>⚠️ <b>파일 없음</b>: 사이드바(>)에서 파일 업로드</span></div>", unsafe_allow_html=True)
 
 if df is not None:
     # 컬럼 매핑
@@ -268,79 +334,79 @@ if df is not None:
     real_status = col_map.get('status', None)
     real_target = target_col
 
-    with st.expander("🔍 검색 조건", expanded=True):
-        r1, r2 = st.columns(2)
-        with r1:
-            # [수정] 모델 리스트 생성 로직 (그룹 + 개별)
-            raw_models = df[real_model].unique().tolist()
-            display_options = []
-            grouped_items = []
-            
-            # 1. 그룹 추가
-            for label, items in MODEL_GROUPS.items():
-                if any(i in raw_models for i in items):
-                    display_options.append(label)
-                    grouped_items.extend(items)
-            
-            # 2. 나머지 개별 모델 추가 (그룹에 포함 안 된 것만)
-            for m in raw_models:
-                if m not in grouped_items:
-                    display_options.append(m)
-            
-            display_options.sort()
-            selected_models_display = st.multiselect("모델", display_options, default=[], placeholder="선택하세요")
-            
-            # [수정] 선택된 옵션을 실제 모델명 리스트로 변환
-            selected_models = []
-            for opt in selected_models_display:
-                if opt in MODEL_GROUPS:
-                    selected_models.extend(MODEL_GROUPS[opt])
-                else:
-                    selected_models.append(opt)
+    # 3. 검색창 (st.form 제거 -> 즉시 반응형)
+    st.markdown('<div class="search-container">', unsafe_allow_html=True)
+    c_model, c_color = st.columns(2)
+    
+    with c_model:
+        raw_models = df[real_model].unique().tolist()
+        display_options = []
+        grouped_items = []
+        for label, items in MODEL_GROUPS.items():
+            if any(i in raw_models for i in items):
+                display_options.append(label)
+                grouped_items.extend(items)
+        for m in raw_models:
+            if m not in grouped_items: display_options.append(m)
+        display_options.sort()
+        
+        selected_models_display = st.multiselect("모델", display_options, placeholder="선택하세요")
+        
+        selected_models = []
+        for opt in selected_models_display:
+            if opt in MODEL_GROUPS: selected_models.extend(MODEL_GROUPS[opt])
+            else: selected_models.append(opt)
 
-        with r2:
-            all_owners = sorted(df[real_boyu].unique().tolist())
-            selected_owners = st.multiselect("보유처", ["전체"] + all_owners, default=[], placeholder="미선택 시 전체")
-
-        r3, r4, r5 = st.columns([3, 3, 2])
-        with r3:
-            if real_color:
-                if selected_models:
-                    f_m = df[df[real_model].isin(selected_models)]
-                    av_c = sorted(f_m[real_color].unique().tolist())
-                else: 
-                    av_c = sorted(df[real_color].unique().tolist())
-                selected_colors = st.multiselect("색상", av_c, default=[], placeholder="선택하세요")
-            else: st.write("-")
-        with r4:
-            reg_ord = ["전체", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
-            selected_regions = st.multiselect("지역", reg_ord, default=[], placeholder="전체")
-        with r5:
-            st.write("")
-            search_clicked = st.button("🚀 조회", type="primary", use_container_width=True)
-
-    if search_clicked:
-        if not selected_models and (not selected_owners or "전체" in selected_owners):
-             st.warning("모델 또는 보유처를 선택해주세요.")
-             st.session_state['filtered_data'] = None
+    with c_color:
+        if real_color:
+            # 동적 Placeholder 계산
+            color_placeholder = "선택하세요"
+            if selected_models:
+                color_placeholder = "💡 색상을 선택해주세요 (미선택 시 전체)"
+                filtered_df = df[df[real_model].isin(selected_models)]
+                sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
+            else:
+                sorted_colors = sorted(df[real_color].dropna().unique().tolist())
+            
+            av_c = ["전체"] + sorted_colors
+            # [핵심] Placeholder 동적 적용
+            selected_colors = st.multiselect("색상", av_c, placeholder=color_placeholder)
         else:
-            f_df = df.copy()
-            if selected_models: f_df = f_df[f_df[real_model].isin(selected_models)]
-            if selected_owners and "전체" not in selected_owners:
-                f_df = f_df[f_df[real_boyu].isin(selected_owners)]
-            if real_color and selected_colors:
-                f_df = f_df[f_df[real_color].isin(selected_colors)]
-            if selected_regions and "전체" not in selected_regions:
-                f_df = f_df[f_df['cached_region'].isin(selected_regions)]
-            
-            f_df = f_df.sort_values(by=real_boyu, ascending=True)
-            map_df = f_df[~f_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
-            st.session_state['filtered_data'] = {'list': f_df, 'map': map_df}
-            st.session_state['selected_idx'] = None
+            st.write("-")
 
-    st.markdown("---")
+    c_region, c_owner = st.columns(2)
+    with c_region:
+        reg_ord = ["전체", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
+        selected_regions = st.multiselect("지역", reg_ord, placeholder="전체")
+    with c_owner:
+        all_owners = sorted(df[real_boyu].unique().tolist())
+        selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
+    if st.button("🚀 조회하기", use_container_width=True):
+        st.session_state['search_clicked'] = True
+        
+        temp_df = df.copy()
+        if selected_models: temp_df = temp_df[temp_df[real_model].isin(selected_models)]
+        if selected_colors and "전체" not in selected_colors:
+            temp_df = temp_df[temp_df[real_color].isin(selected_colors)]
+        if selected_owners and "전체" not in selected_owners:
+            temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
+        if selected_regions and "전체" not in selected_regions:
+            temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
+        
+        temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
+        map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
+        
+        st.session_state['filtered_data'] = {'list': temp_df, 'map': map_filtered_df}
+        st.session_state['selected_idx'] = None
+        st.session_state['clicked_store_name'] = None
+        st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 4. 결과 출력
     if st.session_state['filtered_data'] is not None:
+        st.markdown("---")
         data = st.session_state['filtered_data']
         list_df = data['list']
         map_df = data['map']
@@ -348,33 +414,31 @@ if df is not None:
         if not list_df.empty:
             left, right = st.columns([6, 4])
 
-            # 리스트
             with right:
                 st.subheader(f"📋 ({len(list_df)}건)")
-                MAX = 100
-                d_df = list_df.head(MAX) if len(list_df) > MAX else list_df
-                sel_idx = st.session_state['selected_idx']
-                
                 with st.container(height=500):
-                    for idx, row in d_df.iterrows():
+                    for idx, row in list_df.head(100).iterrows():
                         c_info, c_btn = st.columns([8, 2])
-                        bg = "background-color: #ffecec;" if sel_idx == idx else ""
+                        bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
                         with c_info:
-                            nm = row[real_boyu]
-                            det = f"{row[real_model]} | {row[real_color] if real_color else '-'} | {row[real_status] if real_status else '-'} | {row[real_target] if real_target else '-'}"
-                            st.markdown(f"<div class='list-item-container' style='{bg}'>\
-                                            <div class='list-title'>{nm}</div>\
-                                            <div class='list-sub'>{det}</div>\
-                                         </div>", unsafe_allow_html=True)
+                            nm = str(row[real_boyu])
+                            r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
+                            r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
+                            r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
+                            r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
+                            
+                            det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
+                            st.markdown(f"<div class='list-item-container' style='{bg}'>"
+                                        f"<div class='list-title'>{nm}</div>"
+                                        f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
                         with c_btn:
                             if st.button("📍", key=f"b_{idx}"):
                                 st.session_state['selected_idx'] = idx
+                                st.session_state['clicked_store_name'] = nm
                                 st.rerun()
-                        st.markdown("<div class='compact-hr'></div>", unsafe_allow_html=True)
 
-            # 지도
             with left:
-                sel_idx = st.session_state['selected_idx']
+                clicked_name = st.session_state['clicked_store_name']
                 
                 if not map_df.empty:
                     min_lat = map_df['cached_lat'].min()
@@ -403,18 +467,20 @@ if df is not None:
                             else: bg_c, ic_c = "rgba(255,255,255,0.8)", hex_c
                         else: bg_c, ic_c = "rgba(128,0,128,0.8)", "white"
 
-                        z = 1000 if sel_idx in g.index else 1
-                        if sel_idx in g.index: bg_c, ic_c = "rgba(255,0,0,0.85)", "white"
+                        z = 1000 if st.session_state['clicked_store_name'] == name else 1
+                        if st.session_state['clicked_store_name'] == name: bg_c, ic_c = "rgba(255,0,0,0.85)", "white"
 
                         t_rows = ""
+                        # [팝업] 테이블 행 생성 (Inline Style 강제 적용)
+                        td_style = "border:1px solid #000; padding:5px; text-align:center;"
                         counts = g.groupby([real_model, real_color, real_status]).size().reset_index(name='cnt')
                         for _, r in counts.iterrows():
                             cn = r[real_color] if real_color else "-"
                             stt = r[real_status] if real_status else "-"
                             qty = r['cnt']
-                            t_rows += f"<tr><td>{r[real_model]}</td><td>{cn}</td><td>{stt}</td><td>{qty}</td></tr>"
+                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{qty}</td></tr>"
 
-                        # [팝업 개선] 글씨 11px, 중앙 정렬, 엑셀 격자, 너비 260px (모바일 최적화)
+                        # [팝업] HTML 구조 (검은 테두리 완벽 적용)
                         popup_html = f"""
                         <div style='width:100%; min-width:260px; font-family:sans-serif;'>
                             <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:5px; text-align:center;'>{name}</div>
@@ -430,7 +496,7 @@ if df is not None:
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {t_rows.replace('<tr>', '<tr>').replace('<td>', "<td style='border:1px solid #000; padding:5px; text-align:center;'>")}
+                                    {t_rows}
                                 </tbody>
                             </table>
                             
@@ -468,4 +534,4 @@ if df is not None:
                 else:
                     st.info("지도 데이터 없음")
         else:
-            st.warning("데이터 없음")
+            st.warning("조건에 맞는 결과가 없습니다.")
