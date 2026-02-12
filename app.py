@@ -27,7 +27,7 @@ if 'clicked_store_name' not in st.session_state: st.session_state['clicked_store
 if 'search_clicked' not in st.session_state: st.session_state['search_clicked'] = False
 
 # ==============================================================================
-# [스타일] UI 디자인
+# [스타일] UI 디자인 (레이아웃 분리 적용 CSS)
 # ==============================================================================
 st.markdown("""
     <style>
@@ -136,14 +136,32 @@ st.markdown("""
         section[data-testid="stSidebar"] { background-color: #f8f9fa; }
         ul[data-testid="stVirtualDropdown"] { max-height: 200px !important; }
 
-        /* 모바일 화면에서 컬럼 강제 가로 배치 */
+        /* [핵심 수정] 모바일 화면 레이아웃 제어 */
         @media (max-width: 768px) {
+            
+            /* 1. 전체 구조는 줄바꿈 허용 (지도 위 / 리스트 아래) */
             div[data-testid="stHorizontalBlock"] {
-                flex-wrap: nowrap !important;
+                flex-wrap: wrap !important;
+                gap: 10px !important;
             }
+            
+            /* 2. 단, '리스트 박스(Scroll Container)' 내부는 줄바꿈 금지 (텍스트 | 버튼) */
+            div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"] {
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+            }
+
+            /* 3. 컬럼 너비 조정 */
             div[data-testid="column"] {
-                flex: 1 !important;
-                min-width: 0 !important;
+                min-width: 0 !important; /* 최소 너비 제한 해제 */
+            }
+
+            /* 4. 버튼 스타일 최적화 */
+            div.stButton > button {
+                padding: 0.3rem !important;
+                font-size: 12px !important;
+                min-height: 35px !important;
+                white-space: nowrap !important;
             }
         }
     </style>
@@ -385,6 +403,7 @@ if df is not None:
 
     with c_color:
         if real_color:
+            # 동적 Placeholder 계산
             color_placeholder = "선택하세요"
             if selected_models:
                 filtered_df = df[df[real_model].isin(selected_models)]
@@ -401,9 +420,8 @@ if df is not None:
     c_region, c_owner = st.columns(2)
     with c_region:
         reg_ord = ["전체", "사무실", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
-        # [핵심 변경] 지역 기본값을 '사무실'로 설정
-        default_region = ["사무실"]
-        selected_regions = st.multiselect("지역", reg_ord, default=default_region, placeholder="전체")
+        # [핵심] 기본값 '사무실' 설정
+        selected_regions = st.multiselect("지역", reg_ord, default=["사무실"], placeholder="전체")
     with c_owner:
         all_owners = sorted(df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
@@ -450,31 +468,10 @@ if df is not None:
         st.markdown("---")
 
         if not list_df.empty:
+            # PC: Map Left(6) / List Right(4)
             left, right = st.columns([6, 4])
 
-            # 리스트 뷰
-            with right:
-                with st.container(height=500):
-                    for idx, row in list_df.head(100).iterrows():
-                        c_info, c_btn = st.columns([8, 2])
-                        bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
-                        with c_info:
-                            nm = str(row[real_boyu])
-                            r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
-                            r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
-                            r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
-                            r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
-                            
-                            det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
-                            st.markdown(f"<div class='list-item-container' style='{bg}'>"
-                                        f"<div class='list-title'>{nm}</div>"
-                                        f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
-                        with c_btn:
-                            if st.button("📍", key=f"b_{idx}"):
-                                st.session_state['selected_idx'] = idx
-                                st.session_state['clicked_store_name'] = nm
-                                st.rerun()
-
+            # 왼쪽: 지도 뷰
             with left:
                 clicked_name = st.session_state['clicked_store_name']
                 
@@ -584,5 +581,29 @@ if df is not None:
 
                 else:
                     st.info("지도 데이터 없음")
+
+            # 오른쪽: 리스트 뷰
+            with right:
+                with st.container(height=500):
+                    for idx, row in list_df.head(100).iterrows():
+                        # 모바일 한 줄 유지 비율 (8.2 : 1.8)
+                        c_info, c_btn = st.columns([8.2, 1.8])
+                        bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
+                        with c_info:
+                            nm = str(row[real_boyu])
+                            r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
+                            r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
+                            r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
+                            r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
+                            
+                            det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
+                            st.markdown(f"<div class='list-item-container' style='{bg}'>"
+                                        f"<div class='list-title'>{nm}</div>"
+                                        f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
+                        with c_btn:
+                            if st.button("📍", key=f"b_{idx}"):
+                                st.session_state['selected_idx'] = idx
+                                st.session_state['clicked_store_name'] = nm
+                                st.rerun()
         else:
             st.warning("조건에 맞는 결과가 없습니다.")
