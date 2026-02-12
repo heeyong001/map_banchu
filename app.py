@@ -8,7 +8,8 @@ import os
 import hashlib
 import json
 
-# [안전 장치] GestureHandling
+# [기능 추가] 모바일 제스처 처리를 위한 플러그인 확인
+# 한 손가락 스크롤 / 두 손가락 줌 기능을 담당합니다.
 try:
     from folium.plugins import GestureHandling
     gesture_handling_available = True
@@ -27,10 +28,11 @@ if 'clicked_store_name' not in st.session_state: st.session_state['clicked_store
 if 'search_clicked' not in st.session_state: st.session_state['search_clicked'] = False
 
 # ==============================================================================
-# [스타일] UI 디자인 (모바일 1행 강제 고정 및 간격 최적화)
+# [스타일] UI 디자인 (유지: 고밀도 리스트 뷰 - 한 화면 최대 표시)
 # ==============================================================================
 st.markdown("""
     <style>
+        /* 기본 여백 조정 */
         .block-container {
             padding-top: 3.5rem !important; 
             padding-bottom: 3rem !important;
@@ -62,6 +64,7 @@ st.markdown("""
             margin-bottom: 15px;
         }
 
+        /* [일반 버튼 스타일] (조회 버튼 등) */
         div.stButton > button {
             width: 100%;
             height: auto;
@@ -75,127 +78,52 @@ st.markdown("""
             box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
 
-        /* 리스트 아이템 박스 스타일 */
-        .list-item-container {
-            padding: 10px;
-            background-color: white;
-            border-radius: 8px;
-            border-left: 5px solid #764ba2;
-            margin-bottom: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        /* [리스트 내부 버튼 스타일: 고밀도 리스트 형태 유지] */
+        div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button {
+            background: white !important;           
+            color: #333 !important;                 
             
-            /* 높이 고정 및 내용 넘침 방지 */
-            height: 60px !important;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+            /* 테두리를 없애고 하단 구분선만 사용하여 엑셀/리스트 느낌으로 변경 */
+            border: none !important;
+            border-bottom: 1px solid #f0f0f0 !important; 
+            border-left: 4px solid #764ba2 !important; /* 식별용 왼쪽 라인 유지 */
+            border-radius: 0px !important;          
             
-            /* 텍스트가 넘칠 경우 숨김 */
-            overflow: hidden; 
-            width: 100%;
+            text-align: left !important;            
+            box-shadow: none !important;            
+            
+            /* 크기 최소화 및 1줄 표시 최적화 */
+            padding: 6px 8px !important;            
+            margin-bottom: 1px !important;          
+            margin-top: 0px !important;
+            
+            line-height: 1.2 !important;            
+            height: auto !important;                
+            min-height: 0px !important;             
+            white-space: normal !important;         
+            display: block !important;              
+            font-size: 13px !important;             
         }
 
-        /* 제목 스타일 (한 줄 말줄임) */
-        .list-title {
-            font-weight: bold;
-            font-size: 14px;
-            color: #333;
-            margin-bottom: 3px;
-            
-            white-space: nowrap;      /* 줄바꿈 금지 */
-            overflow: hidden;         /* 넘침 숨김 */
-            text-overflow: ellipsis;  /* ... 처리 */
-            display: block;
+        /* 리스트 선택 시(Active) 효과 */
+        div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:active,
+        div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:focus {
+            background-color: #f3e5f5 !important;   
+            border-left-color: #764ba2 !important;
+            color: #000 !important;
+            font-weight: bold !important;
         }
 
-        /* 상세내용 스타일 (한 줄 말줄임) */
-        .list-sub {
-            font-size: 12px;
-            color: #666;
-            
-            white-space: nowrap;      
-            overflow: hidden;         
-            text-overflow: ellipsis;  
-            display: block;
-        }
-        
-        /* 팝업 테이블 */
-        .popup-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px !important;
-            font-family: sans-serif;
-            margin-top: 5px;
-        }
-        .popup-table th {
-            border: 1px solid #000;
-            background-color: #f0f0f0;
-            padding: 3px;
-            text-align: center;
-            font-weight: bold;
-            color: #000;
-            white-space: nowrap;
-        }
-        .popup-table td {
-            border: 1px solid #000;
-            padding: 3px;
-            text-align: center;
-            color: #000;
-        }
-        
-        .info-msg {
-            font-size: 12px;
-            color: #1565c0;
-            background-color: #e3f2fd;
-            padding: 8px;
-            border-radius: 5px;
-            margin-top: 5px;
-            border: 1px solid #bbdefb;
-        }
-
+        /* 사이드바 및 기타 조정 */
         section[data-testid="stSidebar"] { background-color: #f8f9fa; }
         ul[data-testid="stVirtualDropdown"] { max-height: 200px !important; }
-
-        /* [핵심] 리스트 아이템 내부 간격 1px 고정 (PC/Mobile 공통) */
-        div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"] {
-            gap: 1px !important; 
-            align-items: center !important;
-        }
-
-        /* [★강력 수정★] 모바일 화면 리스트 아이템 1행 강제 */
+        
+        /* 모바일 최적화 */
         @media (max-width: 768px) {
-            
-            /* 리스트 내부 컬럼 컨테이너: 무조건 가로(Row) 정렬 */
-            div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="stHorizontalBlock"] {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: nowrap !important; /* 줄바꿈 절대 금지 */
-            }
-
-            /* 버튼 컬럼 (첫 번째): 너비 고정 */
-            div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-of-type(1) {
-                flex: 0 0 50px !important;
-                min-width: 50px !important;
-                max-width: 50px !important;
-            }
-
-            /* 텍스트 컬럼 (두 번째): 남은 공간 차지 */
-            div[data-testid="stVerticalBlockBorderWrapper"] div[data-testid="column"]:nth-of-type(2) {
-                flex: 1 1 auto !important;
-                min-width: 0 !important; /* 말줄임표 작동을 위해 필수 */
-                width: auto !important;
-            }
-
-            /* 모바일 버튼 디자인 */
-            div.stButton > button {
-                padding: 0 !important;
-                font-size: 14px !important;
-                height: 40px !important;
-                min-height: 40px !important;
-                width: 100% !important;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+            div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button {
+                font-size: 12px !important;       
+                padding: 5px 6px !important;      
+                margin-bottom: 1px !important;
             }
         }
     </style>
@@ -237,6 +165,7 @@ DISTRICT_CENTERS = {
     "만안": [37.4000, 126.9200], "동안": [37.3900, 126.9600],
     "덕양": [37.6380, 126.8330], "일산동": [37.6600, 126.7700], "일산서": [37.6700, 126.7500],
     "처인": [37.2300, 127.2000], "기흥": [37.2655, 127.1293], "수지": [37.3223, 127.0975],
+    "일산": [37.6584, 126.8320]
 }
 
 NEIGHBORHOOD_COORDS = {
@@ -265,7 +194,8 @@ NEIGHBORHOOD_COORDS = {
     "수색": [37.5802, 126.8958], "이태원": [37.5345, 126.9940], "청파": [37.5447, 126.9678],
     "혜화": [37.5820, 127.0010], "군자": [37.5571, 127.0794], "아차산": [37.5520, 127.0890],
     "성수": [37.5445, 127.0559], "왕십리": [37.5619, 127.0384], "상봉": [37.5954, 127.0858],
-    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373]
+    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373],
+    "장항": [37.6629, 126.7697]
 }
 
 def get_region_category(text):
@@ -465,35 +395,48 @@ if df is not None:
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
+    # [수정된 조회 로직: 조건 완화 적용] 
     if st.button("🚀 조회하기", use_container_width=True):
-        st.session_state['search_clicked'] = True
+        # 특정 보유처가 선택되었는지 확인 ("전체"가 아니고 선택값이 있는 경우)
+        is_specific_owner = selected_owners and "전체" not in selected_owners
         
-        temp_df = df.copy()
-        if selected_models: temp_df = temp_df[temp_df[real_model].isin(selected_models)]
-        if selected_colors and "전체" not in selected_colors:
-            temp_df = temp_df[temp_df[real_color].isin(selected_colors)]
-        if selected_owners and "전체" not in selected_owners:
-            temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
-        
-        if selected_regions and "전체" not in selected_regions:
-            if "사무실" in selected_regions:
-                office_mask = temp_df[real_boyu].astype(str).str.contains("반추", na=False)
-                other_regions = [r for r in selected_regions if r != "사무실"]
-                if other_regions:
-                    region_mask = temp_df['cached_region'].isin(other_regions)
-                    temp_df = temp_df[office_mask | region_mask]
+        # 모델도 없고, 특정 보유처도 선택되지 않았을 때만 경고 출력
+        if not selected_models and not is_specific_owner:
+            st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
+        else:
+            st.session_state['search_clicked'] = True
+            
+            temp_df = df.copy()
+            
+            # [수정 포인트] 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
+            if selected_models:
+                temp_df = temp_df[temp_df[real_model].isin(selected_models)]
+            
+            if selected_colors and "전체" not in selected_colors:
+                temp_df = temp_df[temp_df[real_color].isin(selected_colors)]
+                
+            if selected_owners and "전체" not in selected_owners:
+                temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
+            
+            if selected_regions and "전체" not in selected_regions:
+                if "사무실" in selected_regions:
+                    office_mask = temp_df[real_boyu].astype(str).str.contains("반추", na=False)
+                    other_regions = [r for r in selected_regions if r != "사무실"]
+                    if other_regions:
+                        region_mask = temp_df['cached_region'].isin(other_regions)
+                        temp_df = temp_df[office_mask | region_mask]
+                    else:
+                        temp_df = temp_df[office_mask]
                 else:
-                    temp_df = temp_df[office_mask]
-            else:
-                temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
-        
-        temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
-        map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
-        
-        st.session_state['filtered_data'] = {'list': temp_df, 'map': map_filtered_df}
-        st.session_state['selected_idx'] = None
-        st.session_state['clicked_store_name'] = None
-        st.rerun()
+                    temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
+            
+            temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
+            map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
+            
+            st.session_state['filtered_data'] = {'list': temp_df, 'map': map_filtered_df}
+            st.session_state['selected_idx'] = None
+            st.session_state['clicked_store_name'] = None
+            st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -526,6 +469,10 @@ if df is not None:
                     m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
+                    # [기능 적용] GestureHandling 적용
+                    # 이 플러그인을 추가하면:
+                    # 1. 모바일: 한 손가락 터치 시 페이지 스크롤, 두 손가락 터치 시 지도 줌/이동
+                    # 2. PC: Ctrl + 스크롤 시 지도 줌
                     if gesture_handling_available:
                         try: GestureHandling().add_to(m)
                         except: pass
@@ -624,28 +571,35 @@ if df is not None:
             # 오른쪽: 리스트 뷰
             with list_col:
                 with st.container(height=500):
+                    # [핵심 수정: 리스트 간격 최소화]
+                    st.markdown("""<style>
+                        div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
+                            gap: 1px !important; 
+                        }
+                    </style>""", unsafe_allow_html=True)
+                    
                     for idx, row in list_df.head(100).iterrows():
-                        # [핵심] 비율 축소(0.6 : 9.4)로 PC에서 간격 밀착
-                        c_btn, c_info = st.columns([0.6, 9.4])
-                        bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
+                        nm = str(row[real_boyu])
+                        r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
+                        r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
+                        r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
+                        r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
                         
-                        # 왼쪽: 버튼
-                        with c_btn:
-                            if st.button("📍", key=f"b_{idx}"):
-                                st.session_state['selected_idx'] = idx
-                                st.session_state['clicked_store_name'] = str(row[real_boyu])
-                                st.rerun()
+                        det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
+                        
+                        # 선택된 항목인지 확인
+                        is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
+                        
+                        # [핵심 수정: 1줄 통합 표기]
+                        prefix = "✅ " if is_selected else ""
+                        # 기존 2줄 방식 제거하고 한 줄로 합침
+                        button_label = f"{prefix}{nm}  :  {det}"
+                        
+                        # 텍스트 박스(버튼) 생성
+                        if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
+                            st.session_state['selected_idx'] = idx
+                            st.session_state['clicked_store_name'] = str(row[real_boyu])
+                            st.rerun()
 
-                        with c_info:
-                            nm = str(row[real_boyu])
-                            r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
-                            r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
-                            r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
-                            r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
-                            
-                            det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
-                            st.markdown(f"<div class='list-item-container' style='{bg}'>"
-                                        f"<div class='list-title'>{nm}</div>"
-                                        f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
         else:
             st.warning("조건에 맞는 결과가 없습니다.")
