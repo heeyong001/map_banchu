@@ -82,6 +82,10 @@ st.markdown("""
             border-left: 5px solid #764ba2;
             margin-bottom: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            height: 100%; /* 높이 맞춤 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         .list-title {
             font-weight: bold;
@@ -116,6 +120,17 @@ st.markdown("""
             padding: 3px;
             text-align: center;
             color: #000;
+        }
+        
+        /* 안내 메시지 */
+        .info-msg {
+            font-size: 12px;
+            color: #1565c0;
+            background-color: #e3f2fd;
+            padding: 8px;
+            border-radius: 5px;
+            margin-top: 5px;
+            border: 1px solid #bbdefb;
         }
 
         section[data-testid="stSidebar"] { background-color: #f8f9fa; }
@@ -334,7 +349,7 @@ if df is not None:
     real_status = col_map.get('status', None)
     real_target = target_col
 
-    # 3. 검색창 (st.form 제거 -> 즉시 반응형)
+    # 3. 검색창
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
     c_model, c_color = st.columns(2)
     
@@ -362,21 +377,22 @@ if df is not None:
             # 동적 Placeholder 계산
             color_placeholder = "선택하세요"
             if selected_models:
-                color_placeholder = "💡 색상을 선택해주세요 (미선택 시 전체)"
                 filtered_df = df[df[real_model].isin(selected_models)]
                 sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
+                # [수정] 안내 멘트를 Placeholder에 적용
+                color_placeholder = f"💡 {selected_models_display[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
             else:
                 sorted_colors = sorted(df[real_color].dropna().unique().tolist())
             
             av_c = ["전체"] + sorted_colors
-            # [핵심] Placeholder 동적 적용
+            # [수정] placeholder 속성에 동적 텍스트 적용
             selected_colors = st.multiselect("색상", av_c, placeholder=color_placeholder)
         else:
             st.write("-")
 
     c_region, c_owner = st.columns(2)
     with c_region:
-        reg_ord = ["전체", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
+        reg_ord = ["전체", "사무실", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
         selected_regions = st.multiselect("지역", reg_ord, placeholder="전체")
     with c_owner:
         all_owners = sorted(df[real_boyu].unique().tolist())
@@ -391,8 +407,18 @@ if df is not None:
             temp_df = temp_df[temp_df[real_color].isin(selected_colors)]
         if selected_owners and "전체" not in selected_owners:
             temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
+        
         if selected_regions and "전체" not in selected_regions:
-            temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
+            if "사무실" in selected_regions:
+                office_mask = temp_df[real_boyu].astype(str).str.contains("반추", na=False)
+                other_regions = [r for r in selected_regions if r != "사무실"]
+                if other_regions:
+                    region_mask = temp_df['cached_region'].isin(other_regions)
+                    temp_df = temp_df[office_mask | region_mask]
+                else:
+                    temp_df = temp_df[office_mask]
+            else:
+                temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
         
         temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
         map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
@@ -406,19 +432,20 @@ if df is not None:
 
     # 4. 결과 출력
     if st.session_state['filtered_data'] is not None:
-        st.markdown("---")
         data = st.session_state['filtered_data']
         list_df = data['list']
         map_df = data['map']
+
+        st.subheader(f"검색 총수량 ({len(list_df)}건)")
+        st.markdown("---")
 
         if not list_df.empty:
             left, right = st.columns([6, 4])
 
             with right:
-                st.subheader(f"📋 ({len(list_df)}건)")
                 with st.container(height=500):
                     for idx, row in list_df.head(100).iterrows():
-                        c_info, c_btn = st.columns([8, 2])
+                        c_info, c_btn = st.columns([8.5, 1.5])
                         bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
                         with c_info:
                             nm = str(row[real_boyu])
@@ -432,6 +459,7 @@ if df is not None:
                                         f"<div class='list-title'>{nm}</div>"
                                         f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
                         with c_btn:
+                            st.write("") 
                             if st.button("📍", key=f"b_{idx}"):
                                 st.session_state['selected_idx'] = idx
                                 st.session_state['clicked_store_name'] = nm
@@ -460,6 +488,9 @@ if df is not None:
 
                     for (lat, lon, name), g in groups:
                         u_cols = g[real_color].unique()
+                        
+                        is_office = "반추" in str(name)
+                        
                         if len(u_cols) == 1:
                             c_name = u_cols[0]
                             hex_c, _ = get_real_color(c_name)
@@ -470,21 +501,30 @@ if df is not None:
                         z = 1000 if st.session_state['clicked_store_name'] == name else 1
                         if st.session_state['clicked_store_name'] == name: bg_c, ic_c = "rgba(255,0,0,0.85)", "white"
 
+                        icon_shape = "fa-mobile"
+                        border_style = "border-radius: 50%;"
+                        if is_office:
+                            icon_shape = "fa-star"
+                            bg_c = "rgba(255, 255, 0, 0.9)"
+                            ic_c = "red"
+                            border_style = "border-radius: 10%; border: 2px solid red;"
+
                         t_rows = ""
-                        # [팝업] 테이블 행 생성 (Inline Style 강제 적용)
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
-                        counts = g.groupby([real_model, real_color, real_status]).size().reset_index(name='cnt')
-                        for _, r in counts.iterrows():
+                        for _, r in g.iterrows():
                             cn = r[real_color] if real_color else "-"
                             stt = r[real_status] if real_status else "-"
-                            qty = r['cnt']
-                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{qty}</td></tr>"
+                            tgt = r[real_target] if real_target else "-"
+                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>1</td></tr>"
 
-                        # [팝업] HTML 구조 (검은 테두리 완벽 적용)
+                        region_txt = g['cached_region'].iloc[0]
+                        popup_title = f"{region_txt} - {name}"
+
                         popup_html = f"""
-                        <div style='width:100%; min-width:260px; font-family:sans-serif;'>
-                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:5px; text-align:center;'>{name}</div>
-                            <div style='font-size:11px; color:gray; margin-bottom:10px; text-align:center;'>{g['cached_region'].iloc[0]}</div>
+                        <div style='width:100%; min-width:280px; font-family:sans-serif;'>
+                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:10px; text-align:center; border-bottom:1px solid #ddd; padding-bottom:5px;'>
+                                {popup_title}
+                            </div>
                             
                             <table style='width:100%; border-collapse:collapse; font-size:11px;'>
                                 <thead>
@@ -492,7 +532,8 @@ if df is not None:
                                         <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
                                         <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
                                         <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
-                                        <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>수</th>
+                                        <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
+                                        <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -510,22 +551,22 @@ if df is not None:
                         <div style="
                             background-color: {bg_c};
                             color: {ic_c};
-                            width: 20px;
-                            height: 20px;
-                            border-radius: 50%;
+                            width: 24px;
+                            height: 24px;
+                            {border_style}
                             display: flex;
                             justify-content: center;
                             align-items: center;
-                            font-size: 10px;
+                            font-size: 12px;
                             box-shadow: 1px 1px 3px rgba(0,0,0,0.3);">
-                            <i class="fa fa-mobile"></i>
+                            <i class="fa {icon_shape}"></i>
                         </div>
                         """
                         
                         folium.Marker(
                             location=[lat, lon],
                             icon=folium.DivIcon(html=icon_html),
-                            popup=folium.Popup(popup_html, max_width=350),
+                            popup=folium.Popup(popup_html, max_width=400),
                             z_index_offset=z
                         ).add_to(m)
 
