@@ -82,7 +82,7 @@ st.markdown("""
             border-left: 5px solid #764ba2;
             margin-bottom: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-            height: 100%; /* 높이 맞춤 */
+            height: 100%;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -135,6 +135,17 @@ st.markdown("""
 
         section[data-testid="stSidebar"] { background-color: #f8f9fa; }
         ul[data-testid="stVirtualDropdown"] { max-height: 200px !important; }
+
+        /* [핵심] 모바일 화면에서 컬럼 강제 가로 배치 (1행 유지) */
+        @media (max-width: 768px) {
+            div[data-testid="stHorizontalBlock"] {
+                flex-wrap: nowrap !important;
+            }
+            div[data-testid="column"] {
+                flex: 1 !important;
+                min-width: 0 !important;
+            }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -374,18 +385,15 @@ if df is not None:
 
     with c_color:
         if real_color:
-            # 동적 Placeholder 계산
             color_placeholder = "선택하세요"
             if selected_models:
                 filtered_df = df[df[real_model].isin(selected_models)]
                 sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
-                # [수정] 안내 멘트를 Placeholder에 적용
                 color_placeholder = f"💡 {selected_models_display[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
             else:
                 sorted_colors = sorted(df[real_color].dropna().unique().tolist())
             
             av_c = ["전체"] + sorted_colors
-            # [수정] placeholder 속성에 동적 텍스트 적용
             selected_colors = st.multiselect("색상", av_c, placeholder=color_placeholder)
         else:
             st.write("-")
@@ -442,10 +450,12 @@ if df is not None:
         if not list_df.empty:
             left, right = st.columns([6, 4])
 
+            # 리스트 뷰
             with right:
                 with st.container(height=500):
                     for idx, row in list_df.head(100).iterrows():
-                        c_info, c_btn = st.columns([8.5, 1.5])
+                        # [핵심 변경] 컬럼 비율 조정 및 세로 정렬
+                        c_info, c_btn = st.columns([8, 2])
                         bg = "background-color: #f3e5f5;" if st.session_state['clicked_store_name'] == str(row[real_boyu]) else ""
                         with c_info:
                             nm = str(row[real_boyu])
@@ -459,7 +469,7 @@ if df is not None:
                                         f"<div class='list-title'>{nm}</div>"
                                         f"<div class='list-sub'>{det}</div></div>", unsafe_allow_html=True)
                         with c_btn:
-                            st.write("") 
+                            # [핵심 변경] 빈 공간 제거 및 버튼만 배치 (CSS로 정렬됨)
                             if st.button("📍", key=f"b_{idx}"):
                                 st.session_state['selected_idx'] = idx
                                 st.session_state['clicked_store_name'] = nm
