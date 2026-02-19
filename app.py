@@ -3,18 +3,11 @@ import pandas as pd
 import folium
 from folium.features import DivIcon
 from streamlit_folium import st_folium
+from branca.element import Element  # 에러 방지를 위해 추가된 직접 주입 모듈
 import random
 import os
 import hashlib
 import json
-
-# [기능 추가] 모바일 제스처 처리를 위한 플러그인 확인
-# 한 손가락 스크롤 / 두 손가락 줌 기능을 담당합니다.
-try:
-    from folium.plugins import GestureHandling
-    gesture_handling_available = True
-except ImportError:
-    gesture_handling_available = False
 
 # 1. 화면 설정
 st.set_page_config(layout="wide", page_title="재고 현황 대시보드", initial_sidebar_state="collapsed")
@@ -295,11 +288,24 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-if uploaded_file:
+# 무한 갱신 방지 및 즉각적인 화면 갱신 (Streamlit의 고유 file_id 활용)
+if 'last_uploaded_id' not in st.session_state:
+    st.session_state['last_uploaded_id'] = None
+
+if uploaded_file is not None and st.session_state['last_uploaded_id'] != uploaded_file.file_id:
     try:
         with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
         with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
-        st.success("저장 완료")
+        
+        # 새 파일 업로드 시 초기화면으로 돌아가도록 검색 데이터 세션 초기화
+        st.session_state['filtered_data'] = None
+        st.session_state['selected_idx'] = None
+        st.session_state['clicked_store_name'] = None
+        st.session_state['search_clicked'] = False
+        
+        # 중복 실행 방지를 위해 고유 ID 저장
+        st.session_state['last_uploaded_id'] = uploaded_file.file_id
+        
         st.cache_data.clear()
         st.rerun()
     except Exception as e:
@@ -395,12 +401,9 @@ if df is not None:
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
-    # [수정된 조회 로직: 조건 완화 적용] 
     if st.button("🚀 조회하기", use_container_width=True):
-        # 특정 보유처가 선택되었는지 확인 ("전체"가 아니고 선택값이 있는 경우)
         is_specific_owner = selected_owners and "전체" not in selected_owners
         
-        # 모델도 없고, 특정 보유처도 선택되지 않았을 때만 경고 출력
         if not selected_models and not is_specific_owner:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
         else:
@@ -408,7 +411,6 @@ if df is not None:
             
             temp_df = df.copy()
             
-            # [수정 포인트] 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
             if selected_models:
                 temp_df = temp_df[temp_df[real_model].isin(selected_models)]
             
@@ -450,7 +452,6 @@ if df is not None:
         st.markdown("---")
 
         if not list_df.empty:
-            # PC: 좌(지도)/우(리스트) 레이아웃 유지
             map_col, list_col = st.columns([6, 4])
 
             # 왼쪽: 지도 뷰
@@ -469,13 +470,10 @@ if df is not None:
                     m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
-                    # [기능 적용] GestureHandling 적용
-                    # 이 플러그인을 추가하면:
-                    # 1. 모바일: 한 손가락 터치 시 페이지 스크롤, 두 손가락 터치 시 지도 줌/이동
-                    # 2. PC: Ctrl + 스크롤 시 지도 줌
-                    if gesture_handling_available:
-                        try: GestureHandling().add_to(m)
-                        except: pass
+                    # [수정 사항 핵심] 모듈 import 방식(버전 충돌) 우회하고, 직접 주입하는 방식으로 교체
+                    m.get_root().header.add_child(Element('<link rel="stylesheet" href="https://unpkg.com/leaflet-gesture-handling/dist/leaflet-gesture-handling.min.css" type="text/css">'))
+                    m.get_root().html.add_child(Element('<script src="https://unpkg.com/leaflet-gesture-handling"></script>'))
+                    m.options['gestureHandling'] = True
                     
                     groups = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
 
@@ -563,7 +561,7 @@ if df is not None:
                             z_index_offset=z
                         ).add_to(m)
 
-                    st_folium(m, width="100%", height=450, returned_objects=[])
+                    st_folium(m, use_container_width=True, height=450, returned_objects=[])
 
                 else:
                     st.info("지도 데이터 없음")
@@ -571,7 +569,6 @@ if df is not None:
             # 오른쪽: 리스트 뷰
             with list_col:
                 with st.container(height=500):
-                    # [핵심 수정: 리스트 간격 최소화]
                     st.markdown("""<style>
                         div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                             gap: 1px !important; 
@@ -587,15 +584,10 @@ if df is not None:
                         
                         det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
                         
-                        # 선택된 항목인지 확인
                         is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
-                        
-                        # [핵심 수정: 1줄 통합 표기]
                         prefix = "✅ " if is_selected else ""
-                        # 기존 2줄 방식 제거하고 한 줄로 합침
                         button_label = f"{prefix}{nm}  :  {det}"
                         
-                        # 텍스트 박스(버튼) 생성
                         if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
                             st.session_state['selected_idx'] = idx
                             st.session_state['clicked_store_name'] = str(row[real_boyu])
@@ -604,4 +596,3 @@ if df is not None:
         else:
 
             st.warning("조건에 맞는 결과가 없습니다.")
-
