@@ -158,7 +158,6 @@ DISTRICT_CENTERS = {
     "만안": [37.4000, 126.9200], "동안": [37.3900, 126.9600],
     "덕양": [37.6380, 126.8330], "일산동": [37.6600, 126.7700], "일산서": [37.6700, 126.7500],
     "처인": [37.2300, 127.2000], "기흥": [37.2655, 127.1293], "수지": [37.3223, 127.0975],
-    "일산": [37.6584, 126.8320]
 }
 
 NEIGHBORHOOD_COORDS = {
@@ -187,8 +186,7 @@ NEIGHBORHOOD_COORDS = {
     "수색": [37.5802, 126.8958], "이태원": [37.5345, 126.9940], "청파": [37.5447, 126.9678],
     "혜화": [37.5820, 127.0010], "군자": [37.5571, 127.0794], "아차산": [37.5520, 127.0890],
     "성수": [37.5445, 127.0559], "왕십리": [37.5619, 127.0384], "상봉": [37.5954, 127.0858],
-    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373],
-    "장항": [37.6629, 126.7697],"봉일":[37.7436,126.8069]
+    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373]
 }
 
 def get_region_category(text):
@@ -288,24 +286,11 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# 무한 갱신 방지 및 즉각적인 화면 갱신 (Streamlit의 고유 file_id 활용)
-if 'last_uploaded_id' not in st.session_state:
-    st.session_state['last_uploaded_id'] = None
-
-if uploaded_file is not None and st.session_state['last_uploaded_id'] != uploaded_file.file_id:
+if uploaded_file:
     try:
         with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
         with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
-        
-        # 새 파일 업로드 시 초기화면으로 돌아가도록 검색 데이터 세션 초기화
-        st.session_state['filtered_data'] = None
-        st.session_state['selected_idx'] = None
-        st.session_state['clicked_store_name'] = None
-        st.session_state['search_clicked'] = False
-        
-        # 중복 실행 방지를 위해 고유 ID 저장
-        st.session_state['last_uploaded_id'] = uploaded_file.file_id
-        
+        st.success("저장 완료")
         st.cache_data.clear()
         st.rerun()
     except Exception as e:
@@ -470,10 +455,11 @@ if df is not None:
                     m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
-                    # [수정 사항 핵심] 모듈 import 방식(버전 충돌) 우회하고, 직접 주입하는 방식으로 교체
-                    m.get_root().header.add_child(Element('<link rel="stylesheet" href="https://unpkg.com/leaflet-gesture-handling/dist/leaflet-gesture-handling.min.css" type="text/css">'))
-                    m.get_root().html.add_child(Element('<script src="https://unpkg.com/leaflet-gesture-handling"></script>'))
-                    m.options['gestureHandling'] = True
+                    try:
+                        from folium.plugins import GestureHandling
+                        GestureHandling().add_to(m)
+                    except:
+                        pass
                     
                     groups = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
 
@@ -502,11 +488,26 @@ if df is not None:
 
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
-                        for _, r in g.iterrows():
-                            cn = r[real_color] if real_color else "-"
-                            stt = r[real_status] if real_status else "-"
-                            tgt = r[real_target] if real_target else "-"
-                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>1</td></tr>"
+                        
+                        # ====================================================================
+                        # [핵심 수정] 팝업창 내부 데이터 중복 합산 로직
+                        # ====================================================================
+                        agg_cols = [real_model]
+                        if real_color: agg_cols.append(real_color)
+                        if real_status: agg_cols.append(real_status)
+                        if real_target: agg_cols.append(real_target)
+                        
+                        # 모델, 색상, 상태, 출고일이 같은 항목을 그룹화하여 count 계산
+                        summary_g = g.groupby(agg_cols, dropna=False).size().reset_index(name='count')
+                        
+                        for _, r in summary_g.iterrows():
+                            cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
+                            stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
+                            tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
+                            qty = r['count']
+                            
+                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
+                        # ====================================================================
 
                         region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{region_txt} - {name}"
@@ -561,7 +562,7 @@ if df is not None:
                             z_index_offset=z
                         ).add_to(m)
 
-                    st_folium(m, use_container_width=True, height=450, returned_objects=[])
+                    st_folium(m, width="100%", height=450, returned_objects=[])
 
                 else:
                     st.info("지도 데이터 없음")
@@ -594,5 +595,4 @@ if df is not None:
                             st.rerun()
 
         else:
-
             st.warning("조건에 맞는 결과가 없습니다.")
