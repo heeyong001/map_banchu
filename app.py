@@ -3,11 +3,18 @@ import pandas as pd
 import folium
 from folium.features import DivIcon
 from streamlit_folium import st_folium
-from branca.element import Element  # 에러 방지를 위해 추가된 직접 주입 모듈
 import random
 import os
 import hashlib
 import json
+
+# [기능 추가] 모바일 제스처 처리를 위한 플러그인 확인
+# 한 손가락 스크롤 / 두 손가락 줌 기능을 담당합니다.
+try:
+    from folium.plugins import GestureHandling
+    gesture_handling_available = True
+except ImportError:
+    gesture_handling_available = False
 
 # 1. 화면 설정
 st.set_page_config(layout="wide", page_title="재고 현황 대시보드", initial_sidebar_state="collapsed")
@@ -158,6 +165,7 @@ DISTRICT_CENTERS = {
     "만안": [37.4000, 126.9200], "동안": [37.3900, 126.9600],
     "덕양": [37.6380, 126.8330], "일산동": [37.6600, 126.7700], "일산서": [37.6700, 126.7500],
     "처인": [37.2300, 127.2000], "기흥": [37.2655, 127.1293], "수지": [37.3223, 127.0975],
+    "일산": [37.6584, 126.8320]
 }
 
 NEIGHBORHOOD_COORDS = {
@@ -186,7 +194,8 @@ NEIGHBORHOOD_COORDS = {
     "수색": [37.5802, 126.8958], "이태원": [37.5345, 126.9940], "청파": [37.5447, 126.9678],
     "혜화": [37.5820, 127.0010], "군자": [37.5571, 127.0794], "아차산": [37.5520, 127.0890],
     "성수": [37.5445, 127.0559], "왕십리": [37.5619, 127.0384], "상봉": [37.5954, 127.0858],
-    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373]
+    "수유": [37.6370, 127.0250], "창동": [37.6530, 127.0470], "서부물류": [37.5113, 126.8373],
+    "장항": [37.6629, 126.7697],"봉일":[37.7436, 126.8069],"광탄":[37.7975,126.8480]
 }
 
 def get_region_category(text):
@@ -286,15 +295,26 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
+# 새로고침 무한 루프 방지를 위한 업로드 기록 세션 추가
+if 'last_uploaded' not in st.session_state: 
+    st.session_state['last_uploaded'] = None
+
 if uploaded_file:
-    try:
-        with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
-        with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
-        st.success("저장 완료")
-        st.cache_data.clear()
-        st.rerun()
-    except Exception as e:
-        st.error(f"⛔ 저장 실패: 파일을 닫고 다시 시도해주세요. ({e})")
+    # 파일 이름과 크기로 고유 식별자 생성 (동일 파일 중복 실행 방지)
+    current_file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+    
+    # 이전에 업로드한 파일과 다를 때만(새 파일일 때만) 실행
+    if st.session_state['last_uploaded'] != current_file_id:
+        try:
+            with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
+            with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
+            
+            st.session_state['last_uploaded'] = current_file_id  # 현재 파일 처리 완료 기록
+            st.success("저장 완료")
+            st.cache_data.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"⛔ 저장 실패: 파일을 닫고 다시 시도해주세요. ({e})")
 
 df = None
 if os.path.exists(DATA_FILE):
@@ -386,9 +406,12 @@ if df is not None:
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
+    # [수정된 조회 로직: 조건 완화 적용] 
     if st.button("🚀 조회하기", use_container_width=True):
+        # 특정 보유처가 선택되었는지 확인 ("전체"가 아니고 선택값이 있는 경우)
         is_specific_owner = selected_owners and "전체" not in selected_owners
         
+        # 모델도 없고, 특정 보유처도 선택되지 않았을 때만 경고 출력
         if not selected_models and not is_specific_owner:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
         else:
@@ -396,6 +419,7 @@ if df is not None:
             
             temp_df = df.copy()
             
+            # [수정 포인트] 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
             if selected_models:
                 temp_df = temp_df[temp_df[real_model].isin(selected_models)]
             
@@ -437,6 +461,7 @@ if df is not None:
         st.markdown("---")
 
         if not list_df.empty:
+            # PC: 좌(지도)/우(리스트) 레이아웃 유지
             map_col, list_col = st.columns([6, 4])
 
             # 왼쪽: 지도 뷰
@@ -455,11 +480,13 @@ if df is not None:
                     m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
-                    try:
-                        from folium.plugins import GestureHandling
-                        GestureHandling().add_to(m)
-                    except:
-                        pass
+                    # [기능 적용] GestureHandling 적용
+                    # 이 플러그인을 추가하면:
+                    # 1. 모바일: 한 손가락 터치 시 페이지 스크롤, 두 손가락 터치 시 지도 줌/이동
+                    # 2. PC: Ctrl + 스크롤 시 지도 줌
+                    if gesture_handling_available:
+                        try: GestureHandling().add_to(m)
+                        except: pass
                     
                     groups = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
 
@@ -488,26 +515,11 @@ if df is not None:
 
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
-                        
-                        # ====================================================================
-                        # [핵심 수정] 팝업창 내부 데이터 중복 합산 로직
-                        # ====================================================================
-                        agg_cols = [real_model]
-                        if real_color: agg_cols.append(real_color)
-                        if real_status: agg_cols.append(real_status)
-                        if real_target: agg_cols.append(real_target)
-                        
-                        # 모델, 색상, 상태, 출고일이 같은 항목을 그룹화하여 count 계산
-                        summary_g = g.groupby(agg_cols, dropna=False).size().reset_index(name='count')
-                        
-                        for _, r in summary_g.iterrows():
-                            cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
-                            stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
-                            tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
-                            qty = r['count']
-                            
-                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
-                        # ====================================================================
+                        for _, r in g.iterrows():
+                            cn = r[real_color] if real_color else "-"
+                            stt = r[real_status] if real_status else "-"
+                            tgt = r[real_target] if real_target else "-"
+                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>1</td></tr>"
 
                         region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{region_txt} - {name}"
@@ -570,6 +582,7 @@ if df is not None:
             # 오른쪽: 리스트 뷰
             with list_col:
                 with st.container(height=500):
+                    # [핵심 수정: 리스트 간격 최소화]
                     st.markdown("""<style>
                         div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                             gap: 1px !important; 
@@ -585,10 +598,15 @@ if df is not None:
                         
                         det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
                         
+                        # 선택된 항목인지 확인
                         is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
+                        
+                        # [핵심 수정: 1줄 통합 표기]
                         prefix = "✅ " if is_selected else ""
+                        # 기존 2줄 방식 제거하고 한 줄로 합침
                         button_label = f"{prefix}{nm}  :  {det}"
                         
+                        # 텍스트 박스(버튼) 생성
                         if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
                             st.session_state['selected_idx'] = idx
                             st.session_state['clicked_store_name'] = str(row[real_boyu])
