@@ -3,6 +3,7 @@ import pandas as pd
 import folium
 from folium.features import DivIcon
 from streamlit_folium import st_folium
+from branca.element import Element  # 에러 방지를 위해 추가된 직접 주입 모듈
 import random
 import os
 import hashlib
@@ -295,7 +296,9 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# 새로고침 무한 루프 방지를 위한 업로드 기록 세션 추가
+# =========================================================
+# [핵심 수정] 새로고침 무한 루프 방지 로직 (반영됨)
+# =========================================================
 if 'last_uploaded' not in st.session_state: 
     st.session_state['last_uploaded'] = None
 
@@ -315,6 +318,7 @@ if uploaded_file:
             st.rerun()
         except Exception as e:
             st.error(f"⛔ 저장 실패: 파일을 닫고 다시 시도해주세요. ({e})")
+# =========================================================
 
 df = None
 if os.path.exists(DATA_FILE):
@@ -419,7 +423,7 @@ if df is not None:
             
             temp_df = df.copy()
             
-            # [수정 포인트] 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
+            # 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
             if selected_models:
                 temp_df = temp_df[temp_df[real_model].isin(selected_models)]
             
@@ -457,7 +461,20 @@ if df is not None:
         list_df = data['list']
         map_df = data['map']
 
-        st.subheader(f"검색 총수량 ({len(list_df)}건)")
+        # =========================================================
+        # [핵심 수정] 검색결과 리스트에 내림차순/오름차순 설정버튼 (디폴트: 내림차순) 반영됨
+        # =========================================================
+        col_title, col_sort = st.columns([6, 4])
+        with col_title:
+            st.subheader(f"검색 총수량 ({len(list_df)}건)")
+        with col_sort:
+            sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
+        
+        # 선택한 라디오 버튼 값에 따라 list_df 재정렬
+        is_ascending = True if sort_order == "오름차순" else False
+        list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
+        # =========================================================
+
         st.markdown("---")
 
         if not list_df.empty:
@@ -481,9 +498,6 @@ if df is not None:
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
                     # [기능 적용] GestureHandling 적용
-                    # 이 플러그인을 추가하면:
-                    # 1. 모바일: 한 손가락 터치 시 페이지 스크롤, 두 손가락 터치 시 지도 줌/이동
-                    # 2. PC: Ctrl + 스크롤 시 지도 줌
                     if gesture_handling_available:
                         try: GestureHandling().add_to(m)
                         except: pass
@@ -515,11 +529,25 @@ if df is not None:
 
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
-                        for _, r in g.iterrows():
-                            cn = r[real_color] if real_color else "-"
-                            stt = r[real_status] if real_status else "-"
-                            tgt = r[real_target] if real_target else "-"
-                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>1</td></tr>"
+                        
+                        # ====================================================================
+                        # [핵심 수정] 팝업창 내부 데이터 중복 합산 로직 (반영됨)
+                        # ====================================================================
+                        agg_cols = [real_model]
+                        if real_color: agg_cols.append(real_color)
+                        if real_status: agg_cols.append(real_status)
+                        if real_target: agg_cols.append(real_target)
+                        
+                        summary_g = g.groupby(agg_cols, dropna=False).size().reset_index(name='count')
+                        
+                        for _, r in summary_g.iterrows():
+                            cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
+                            stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
+                            tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
+                            qty = r['count']
+                            
+                            t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
+                        # ====================================================================
 
                         region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{region_txt} - {name}"
@@ -582,7 +610,6 @@ if df is not None:
             # 오른쪽: 리스트 뷰
             with list_col:
                 with st.container(height=500):
-                    # [핵심 수정: 리스트 간격 최소화]
                     st.markdown("""<style>
                         div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                             gap: 1px !important; 
@@ -598,15 +625,10 @@ if df is not None:
                         
                         det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
                         
-                        # 선택된 항목인지 확인
                         is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
-                        
-                        # [핵심 수정: 1줄 통합 표기]
                         prefix = "✅ " if is_selected else ""
-                        # 기존 2줄 방식 제거하고 한 줄로 합침
                         button_label = f"{prefix}{nm}  :  {det}"
                         
-                        # 텍스트 박스(버튼) 생성
                         if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
                             st.session_state['selected_idx'] = idx
                             st.session_state['clicked_store_name'] = str(row[real_boyu])
