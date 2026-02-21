@@ -296,9 +296,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# =========================================================
-# [핵심 수정] 새로고침 무한 루프 방지 로직 (반영됨)
-# =========================================================
+# 새로고침 무한 루프 방지를 위한 업로드 기록 세션 추가
 if 'last_uploaded' not in st.session_state: 
     st.session_state['last_uploaded'] = None
 
@@ -318,7 +316,6 @@ if uploaded_file:
             st.rerun()
         except Exception as e:
             st.error(f"⛔ 저장 실패: 파일을 닫고 다시 시도해주세요. ({e})")
-# =========================================================
 
 df = None
 if os.path.exists(DATA_FILE):
@@ -410,12 +407,9 @@ if df is not None:
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
-    # [수정된 조회 로직: 조건 완화 적용] 
     if st.button("🚀 조회하기", use_container_width=True):
-        # 특정 보유처가 선택되었는지 확인 ("전체"가 아니고 선택값이 있는 경우)
         is_specific_owner = selected_owners and "전체" not in selected_owners
         
-        # 모델도 없고, 특정 보유처도 선택되지 않았을 때만 경고 출력
         if not selected_models and not is_specific_owner:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
         else:
@@ -423,7 +417,6 @@ if df is not None:
             
             temp_df = df.copy()
             
-            # 모델이 선택된 경우에만 필터링 (선택 안 하면 전체 모델 대상)
             if selected_models:
                 temp_df = temp_df[temp_df[real_model].isin(selected_models)]
             
@@ -462,23 +455,32 @@ if df is not None:
         map_df = data['map']
 
         # =========================================================
-        # [핵심 수정] 검색결과 리스트에 내림차순/오름차순 설정버튼 (디폴트: 내림차순) 반영됨
+        # [핵심 수정] 검색결과 상단 헤더와 하단 리스트 사이 간격 0px 강제 적용
         # =========================================================
+        st.markdown("""
+            <style>
+                /* 블록 간격 강제 제거 */
+                div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stVerticalBlock"]) {
+                    gap: 0rem !important;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
         col_title, col_sort = st.columns([6, 4])
         with col_title:
-            st.subheader(f"검색 총수량 ({len(list_df)}건)")
+            # 기본 st.subheader 대신 여백이 없는 <h3> HTML 태그 적용
+            st.markdown(f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px;'>검색 총수량 ({len(list_df)}건)</h3>", unsafe_allow_html=True)
         with col_sort:
             sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
         
-        # 선택한 라디오 버튼 값에 따라 list_df 재정렬
         is_ascending = True if sort_order == "오름차순" else False
         list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
+
+        # 위아래 빈 공간을 크게 만드는 st.markdown("---") 대신 간격이 없는 HTML 가로선 삽입
+        st.markdown("<hr style='margin: 0px; padding: 0px; border: 0px; border-top: 1px solid #e0e0e0;'>", unsafe_allow_html=True)
         # =========================================================
 
-        st.markdown("---")
-
         if not list_df.empty:
-            # PC: 좌(지도)/우(리스트) 레이아웃 유지
             map_col, list_col = st.columns([6, 4])
 
             # 왼쪽: 지도 뷰
@@ -497,7 +499,6 @@ if df is not None:
                     m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                     m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                     
-                    # [기능 적용] GestureHandling 적용
                     if gesture_handling_available:
                         try: GestureHandling().add_to(m)
                         except: pass
@@ -530,9 +531,6 @@ if df is not None:
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
                         
-                        # ====================================================================
-                        # [핵심 수정] 팝업창 내부 데이터 중복 합산 로직 (반영됨)
-                        # ====================================================================
                         agg_cols = [real_model]
                         if real_color: agg_cols.append(real_color)
                         if real_status: agg_cols.append(real_status)
@@ -547,7 +545,6 @@ if df is not None:
                             qty = r['count']
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
-                        # ====================================================================
 
                         region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{region_txt} - {name}"
