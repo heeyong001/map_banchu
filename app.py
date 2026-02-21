@@ -455,7 +455,7 @@ if df is not None:
         map_df = data['map']
 
         # =========================================================
-        # [핵심 수정] 검색결과 상단 헤더와 하단 리스트 사이 간격 0px 강제 적용
+        # [핵심 수정] 검색결과 상단 헤더와 하단 지도 사이 간격 0px 강제 적용
         # =========================================================
         st.markdown("""
             <style>
@@ -466,16 +466,9 @@ if df is not None:
             </style>
         """, unsafe_allow_html=True)
 
-        col_title, col_sort = st.columns([6, 4])
-        with col_title:
-            # 기본 st.subheader 대신 여백이 없는 <h3> HTML 태그 적용
-            st.markdown(f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px;'>검색 총수량 ({len(list_df)}건)</h3>", unsafe_allow_html=True)
-        with col_sort:
-            sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
+        # 기본 st.subheader 대신 여백이 없는 <h3> HTML 태그 적용
+        st.markdown(f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px;'>검색 총수량 ({len(list_df)}건)</h3>", unsafe_allow_html=True)
         
-        is_ascending = True if sort_order == "오름차순" else False
-        list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
-
         # 위아래 빈 공간을 크게 만드는 st.markdown("---") 대신 간격이 없는 HTML 가로선 삽입
         st.markdown("<hr style='margin: 0px; padding: 0px; border: 0px; border-top: 1px solid #e0e0e0;'>", unsafe_allow_html=True)
         # =========================================================
@@ -606,6 +599,11 @@ if df is not None:
 
             # 오른쪽: 리스트 뷰
             with list_col:
+                # [수정] 정렬 라디오 버튼을 리스트 영역 바로 위로 이동 (모바일에서는 지도 아래 위치)
+                sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
+                is_ascending = True if sort_order == "오름차순" else False
+                list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
+
                 with st.container(height=500):
                     st.markdown("""<style>
                         div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
