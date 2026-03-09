@@ -367,7 +367,7 @@ if df is not None:
                 display_options.append(label)
                 grouped_items.extend(items)
         for m in raw_models:
-            if m not in grouped_items: display_options.append(m)
+            if m not in grouped_items: display_options.append(str(m))
         display_options.sort()
         
         selected_models_display = st.multiselect("모델", display_options, placeholder="선택하세요")
