@@ -529,7 +529,13 @@ if df is not None:
                         for _, r in summary_g.iterrows():
                             cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
                             stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
-                            tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
+                            
+                            # [수정] 반추정보통신인 경우 팝업창 출고일 미표기(-) 처리
+                            if "반추" in str(name):
+                                tgt = "-"
+                            else:
+                                tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
+                                
                             qty = r['count']
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
@@ -610,7 +616,13 @@ if df is not None:
                         r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
                         r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
                         r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
-                        r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
+                        
+                        # [수정] 반추정보통신인 경우 리스트 출고일 미표기(-) 처리
+                        if "반추" in nm:
+                            r_tgt = "-"
+                        else:
+                            r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
+                            
                         r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-'  # <-- [추가된 부분] 일련번호 할당
                         
                         # <-- [수정된 부분] 데이터 상세 문자열에 일련번호 추가
