@@ -340,6 +340,7 @@ if df is not None:
         elif '모델명' in c: col_map['모델명'] = col
         elif '색상' in c: col_map['색상'] = col
         elif any(k in c for k in ['재고', '상태', '등급']): col_map['status'] = col
+        elif '일련번호' in c: col_map['일련번호'] = col  # <-- [추가된 부분] 일련번호 매핑
 
     target_col = None
     if len(df.columns) >= 14: target_col = df.columns[13]
@@ -353,6 +354,7 @@ if df is not None:
     real_color = col_map.get('색상', None)
     real_status = col_map.get('status', None)
     real_target = target_col
+    real_serial = col_map.get('일련번호', None)  # <-- [추가된 부분] 일련번호 매핑
 
     # 3. 검색창
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
@@ -454,9 +456,6 @@ if df is not None:
         list_df = data['list']
         map_df = data['map']
 
-        # =========================================================
-        # [핵심 수정] 검색결과 상단 헤더와 하단 지도 사이 간격 0px 강제 적용
-        # =========================================================
         st.markdown("""
             <style>
                 /* 블록 간격 강제 제거 */
@@ -466,12 +465,8 @@ if df is not None:
             </style>
         """, unsafe_allow_html=True)
 
-        # 기본 st.subheader 대신 여백이 없는 <h3> HTML 태그 적용
         st.markdown(f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px;'>검색 총수량 ({len(list_df)}건)</h3>", unsafe_allow_html=True)
-        
-        # 위아래 빈 공간을 크게 만드는 st.markdown("---") 대신 간격이 없는 HTML 가로선 삽입
         st.markdown("<hr style='margin: 0px; padding: 0px; border: 0px; border-top: 1px solid #e0e0e0;'>", unsafe_allow_html=True)
-        # =========================================================
 
         if not list_df.empty:
             map_col, list_col = st.columns([6, 4])
@@ -599,7 +594,6 @@ if df is not None:
 
             # 오른쪽: 리스트 뷰
             with list_col:
-                # [수정] 정렬 라디오 버튼을 리스트 영역 바로 위로 이동 (모바일에서는 지도 아래 위치)
                 sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
                 is_ascending = True if sort_order == "오름차순" else False
                 list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
@@ -617,8 +611,10 @@ if df is not None:
                         r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
                         r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
                         r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
+                        r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-'  # <-- [추가된 부분] 일련번호 할당
                         
-                        det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt}"
+                        # <-- [수정된 부분] 데이터 상세 문자열에 일련번호 추가
+                        det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt} | {r_serial}"
                         
                         is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
                         prefix = "✅ " if is_selected else ""
