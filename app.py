@@ -340,7 +340,7 @@ if df is not None:
         elif '모델명' in c: col_map['모델명'] = col
         elif '색상' in c: col_map['색상'] = col
         elif any(k in c for k in ['재고', '상태', '등급']): col_map['status'] = col
-        elif '일련번호' in c: col_map['일련번호'] = col  # <-- [추가된 부분] 일련번호 매핑
+        elif '일련번호' in c: col_map['일련번호'] = col
 
     target_col = None
     if len(df.columns) >= 14: target_col = df.columns[13]
@@ -354,7 +354,7 @@ if df is not None:
     real_color = col_map.get('색상', None)
     real_status = col_map.get('status', None)
     real_target = target_col
-    real_serial = col_map.get('일련번호', None)  # <-- [추가된 부분] 일련번호 매핑
+    real_serial = col_map.get('일련번호', None)
 
     # 3. 검색창
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
@@ -530,7 +530,6 @@ if df is not None:
                             cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
                             stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
                             
-                            # [수정] 반추정보통신인 경우 팝업창 출고일 미표기(-) 처리
                             if "반추" in str(name):
                                 tgt = "-"
                             else:
@@ -600,9 +599,23 @@ if df is not None:
 
             # 오른쪽: 리스트 뷰
             with list_col:
-                sort_order = st.radio("목록 정렬", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed", key="result_sort")
-                is_ascending = True if sort_order == "오름차순" else False
-                list_df = list_df.sort_values(by=real_boyu, ascending=is_ascending)
+                # =========================================================
+                # [핵심 수정] 정렬 옵션: 4가지 조합으로 분리 (반영됨)
+                # =========================================================
+                sort_order = st.radio(
+                    "목록 정렬", 
+                    ["보유처명 내림차순", "보유처명 오름차순", "출고일 내림차순", "출고일 오름차순"], 
+                    index=0, 
+                    horizontal=True, 
+                    label_visibility="collapsed", 
+                    key="result_sort"
+                )
+                
+                is_ascending = True if "오름차순" in sort_order else False
+                sort_by_col = real_target if "출고일" in sort_order and real_target else real_boyu
+                
+                list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
+                # =========================================================
 
                 with st.container(height=500):
                     st.markdown("""<style>
@@ -617,15 +630,13 @@ if df is not None:
                         r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
                         r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
                         
-                        # [수정] 반추정보통신인 경우 리스트 출고일 미표기(-) 처리
                         if "반추" in nm:
                             r_tgt = "-"
                         else:
                             r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
                             
-                        r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-'  # <-- [추가된 부분] 일련번호 할당
+                        r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-' 
                         
-                        # <-- [수정된 부분] 데이터 상세 문자열에 일련번호 추가
                         det = f"{r_mod} | {r_col} | {r_stat} | {r_tgt} | {r_serial}"
                         
                         is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
