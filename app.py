@@ -519,6 +519,13 @@ if df is not None:
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
                         
+                        # [핵심 추가] 복사하기 기능용 고유 ID 생성 및 텍스트 조합 로직
+                        uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
+                        region_txt = g['cached_region'].iloc[0]
+                        popup_title = f"{region_txt} - {name}"
+                        
+                        copy_text_lines = [f"[{popup_title}]"]
+                        
                         agg_cols = [real_model]
                         if real_color: agg_cols.append(real_color)
                         if real_status: agg_cols.append(real_status)
@@ -538,14 +545,25 @@ if df is not None:
                             qty = r['count']
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
+                            copy_text_lines.append(f"{r[real_model]} | {cn} | {stt} | {tgt} | {qty}대")
+                            
+                        # 복사될 최종 텍스트 완성
+                        copy_text = "\\n".join(copy_text_lines)
 
-                        region_txt = g['cached_region'].iloc[0]
-                        popup_title = f"{region_txt} - {name}"
-
+                        # [핵심 추가] 팝업창 제목 우측에 원클릭 복사 아이콘(📋) 삽입 (HTML/JS)
                         popup_html = f"""
                         <div style='width:100%; min-width:280px; font-family:sans-serif;'>
-                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:10px; text-align:center; border-bottom:1px solid #ddd; padding-bottom:5px;'>
+                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:10px; text-align:center; border-bottom:1px solid #ddd; padding-bottom:5px; position:relative;'>
                                 {popup_title}
+                                <textarea id='{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
+                                <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
+                                    var ta = document.getElementById('{uid}');
+                                    ta.style.display = 'block';
+                                    ta.select();
+                                    document.execCommand('copy');
+                                    ta.style.display = 'none';
+                                    alert('목록이 복사되었습니다!');
+                                " title="내용 복사"></i>
                             </div>
                             
                             <table style='width:100%; border-collapse:collapse; font-size:11px;'>
@@ -600,19 +618,16 @@ if df is not None:
             # 오른쪽: 리스트 뷰
             with list_col:
                 # =========================================================
-                # [핵심 수정] 정렬 옵션: 4가지 조합으로 분리 (반영됨)
+                # [핵심 수정] 정렬 옵션 그룹화 (기준: 보유처명/출고일순, 방향: 내림차순/오름차순)
                 # =========================================================
-                sort_order = st.radio(
-                    "목록 정렬", 
-                    ["보유처명 내림차순", "보유처명 오름차순", "출고일 내림차순", "출고일 오름차순"], 
-                    index=0, 
-                    horizontal=True, 
-                    label_visibility="collapsed", 
-                    key="result_sort"
-                )
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    sort_target = st.radio("기준", ["보유처명", "출고일순"], index=0, horizontal=True, label_visibility="collapsed")
+                with col_s2:
+                    sort_direction = st.radio("방향", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed")
                 
-                is_ascending = True if "오름차순" in sort_order else False
-                sort_by_col = real_target if "출고일" in sort_order and real_target else real_boyu
+                is_ascending = True if sort_direction == "오름차순" else False
+                sort_by_col = real_target if sort_target == "출고일순" and real_target else real_boyu
                 
                 list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
                 # =========================================================
