@@ -545,10 +545,12 @@ if df is not None:
                             qty = r['count']
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
-                            copy_text_lines.append(f"{r[real_model]} | {cn} | {stt} | {tgt} | {qty}대")
                             
-                        # 복사될 최종 텍스트 완성
-                        copy_text = "\\n".join(copy_text_lines)
+                            # 1. 복사 내용에서 수량(| {qty}대) 제거
+                            copy_text_lines.append(f"{r[real_model]} | {cn} | {stt} | {tgt}")
+                            
+                        # 2. 복사될 최종 텍스트 완성 후 끝에 멘트 추가 (\n은 줄바꿈입니다)
+                        copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
                         # [핵심 추가] 팝업창 제목 우측에 원클릭 복사 아이콘(📋) 삽입 (HTML/JS)
                         popup_html = f"""
