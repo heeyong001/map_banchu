@@ -252,9 +252,12 @@ def get_real_color(korean_color):
 # ==============================================================================
 # [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
 # ==============================================================================
+# ==============================================================================
+# [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
+# ==============================================================================
 @st.cache_data
 def load_address_book():
-    # GitHub에 고정으로 올려둘 주소록 파일명
+    # GitHub에 고정으로 올려둘 주소록 파일명 (실제 파일명과 맞춰주세요)
     addr_file = '판매여지도.xlsx' 
     
     if os.path.exists(addr_file):
@@ -264,10 +267,14 @@ def load_address_book():
         except:
             addr_df = pd.read_csv(addr_file, skiprows=3, dtype=str)
             
-        # '접점코드'(B열)와 '사업장주소'(F열) 컬럼만 추출
-        if '접점코드' in addr_df.columns and '사업장주소' in addr_df.columns:
-            addr_df = addr_df[['접점코드', '사업장주소']].dropna(subset=['접점코드'])
-            return addr_df
+        # [수정] '접점코드', '사업장주소'와 더불어 추가하신 'x좌표', 'y좌표'도 함께 추출
+        use_cols = ['접점코드']
+        if '사업장주소' in addr_df.columns: use_cols.append('사업장주소')
+        if 'x좌표' in addr_df.columns: use_cols.append('x좌표')
+        if 'y좌표' in addr_df.columns: use_cols.append('y좌표')
+        
+        addr_df = addr_df[use_cols].dropna(subset=['접점코드'])
+        return addr_df
     return None
 
 # ==============================================================================
@@ -305,14 +312,24 @@ def load_data_optimized(file):
         final_lats = []
         final_lons = []
         for _, row in df.iterrows():
-            # [핵심 로직] 병합된 '사업장주소'가 있다면 주소를 우선으로 지역을 찾고, 없으면 보유처명으로 찾음
-            if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
-                search_text = row['사업장주소']
-            else:
-                search_text = row[boyu_col]
+            f_lat, f_lon = None, None
+            
+            # [핵심 로직 변경] 1순위: 추가하신 'y좌표', 'x좌표'가 엑셀에 존재하면 그 숫자를 사용!
+            if 'y좌표' in df.columns and 'x좌표' in df.columns and pd.notna(row['y좌표']) and pd.notna(row['x좌표']):
+                try:
+                    # 마커가 완전히 겹쳐서 안 보이는 현상을 막기 위해 살짝 분산(Jitter) 적용
+                    f_lat, f_lon = get_coordinate_smart_jitter(row[boyu_col], float(row['y좌표']), float(row['x좌표']))
+                except ValueError:
+                    pass # 좌표가 숫자가 아닌 경우 패스하고 아래 2순위로 넘어감
+            
+            # 2순위: 좌표가 없거나 에러가 났다면 백업 로직으로 '주소/보유처명' 글자를 읽어서 대략적인 위치 검색
+            if f_lat is None or f_lon is None:
+                if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
+                    search_text = row['사업장주소']
+                else:
+                    search_text = row[boyu_col]
+                f_lat, f_lon = get_coordinate_priority(search_text, 37.5665, 126.9780)
                 
-            # 사업장주소에서 추출한 키워드로 좌표 할당
-            f_lat, f_lon = get_coordinate_priority(search_text, 37.5665, 126.9780)
             final_lats.append(f_lat)
             final_lons.append(f_lon)
 
