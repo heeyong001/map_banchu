@@ -249,10 +249,48 @@ def get_real_color(korean_color):
     elif '레드' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
+# ==============================================================================
+# [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
+# ==============================================================================
+@st.cache_data
+def load_address_book():
+    # GitHub에 고정으로 올려둘 주소록 파일명
+    addr_file = '판매여지도.xlsx' 
+    
+    if os.path.exists(addr_file):
+        try:
+            # 엑셀 상단에 빈 줄이 3줄 있으므로 header=3 (4번째 줄부터 읽음)
+            addr_df = pd.read_excel(addr_file, header=3, dtype=str)
+        except:
+            addr_df = pd.read_csv(addr_file, skiprows=3, dtype=str)
+            
+        # '접점코드'(B열)와 '사업장주소'(F열) 컬럼만 추출
+        if '접점코드' in addr_df.columns and '사업장주소' in addr_df.columns:
+            addr_df = addr_df[['접점코드', '사업장주소']].dropna(subset=['접점코드'])
+            return addr_df
+    return None
+
+# ==============================================================================
+# [수정된 함수] 재고 데이터와 주소록 데이터를 병합(Merge)하여 좌표 할당
+# ==============================================================================
 @st.cache_data
 def load_data_optimized(file):
     if isinstance(file, str): df = pd.read_excel(file, dtype=str)
     else: df = pd.read_excel(file, dtype=str)
+    
+    # 1. 주소록 맵핑 데이터 불러오기
+    addr_df = load_address_book()
+    
+    # 2. 업로드된 재고 데이터에서 '접점번호' 또는 '접점코드' 열 찾기
+    target_code_col = None
+    for col in df.columns:
+        if '접점번호' in str(col) or '접점코드' in str(col):
+            target_code_col = col
+            break
+            
+    # 3. 접점번호를 기준으로 두 데이터를 결합 (VLOOKUP 효과)
+    if addr_df is not None and target_code_col is not None:
+        df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
     
     boyu_col = None
     for col in df.columns:
@@ -267,7 +305,14 @@ def load_data_optimized(file):
         final_lats = []
         final_lons = []
         for _, row in df.iterrows():
-            f_lat, f_lon = get_coordinate_priority(row[boyu_col], 37.5665, 126.9780)
+            # [핵심 로직] 병합된 '사업장주소'가 있다면 주소를 우선으로 지역을 찾고, 없으면 보유처명으로 찾음
+            if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
+                search_text = row['사업장주소']
+            else:
+                search_text = row[boyu_col]
+                
+            # 사업장주소에서 추출한 키워드로 좌표 할당
+            f_lat, f_lon = get_coordinate_priority(search_text, 37.5665, 126.9780)
             final_lats.append(f_lat)
             final_lons.append(f_lon)
 
