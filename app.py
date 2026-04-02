@@ -589,7 +589,7 @@ if df is not None:
                         # [핵심 추가] 복사하기 기능용 고유 ID 생성 및 텍스트 조합 로직
                         uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
                         region_txt = g['cached_region'].iloc[0]
-                        popup_title = f"{region_txt} - {name}"
+                        popup_title = f"{name}"
                         
                         copy_text_lines = [f"[{popup_title}]"]
                         
