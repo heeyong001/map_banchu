@@ -598,7 +598,8 @@ if df is not None:
                         else:
                             address_txt = "주소 미등록"
                             
-                        copy_text_lines = [f"[{popup_title}]"]
+                        # [수정] 복사되는 텍스트 첫머리에 주소(address_txt) 추가
+                        copy_text_lines = [f"[{popup_title}]", f"📍 {address_txt}", ""]
                         
                         agg_cols = [real_model]
                         if real_color: agg_cols.append(real_color)
