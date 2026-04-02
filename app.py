@@ -589,8 +589,16 @@ if df is not None:
                         # [핵심 추가] 복사하기 기능용 고유 ID 생성 및 텍스트 조합 로직
                         uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
                         region_txt = g['cached_region'].iloc[0]
+                        popup_title = f"{name}"region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{name}"
                         
+                        # [추가된 로직] 매핑된 사업장주소 가져오기
+                        address_txt = ""
+                        if '사업장주소' in g.columns and pd.notna(g['사업장주소'].iloc[0]) and str(g['사업장주소'].iloc[0]).strip() != "":
+                            address_txt = str(g['사업장주소'].iloc[0])
+                        else:
+                            address_txt = "주소 미등록"
+                            
                         copy_text_lines = [f"[{popup_title}]"]
                         
                         agg_cols = [real_model]
@@ -613,16 +621,16 @@ if df is not None:
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
                             
-                            # 1. 복사 내용에서 수량(| {qty}대) 제거
+                            # 복사 내용에서 수량 제거
                             copy_text_lines.append(f"{r[real_model]} | {cn} | {stt} | {tgt}")
                             
-                        # 2. 복사될 최종 텍스트 완성 후 끝에 멘트 추가 (\n은 줄바꿈입니다)
+                        # 복사될 최종 텍스트 완성 후 끝에 멘트 추가
                         copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
-                        # [핵심 추가] 팝업창 제목 우측에 원클릭 복사 아이콘(📋) 삽입 (HTML/JS)
+                        # [수정된 부분] 팝업창 HTML: 보유처명 밑에 주소(address_txt) 추가 표시
                         popup_html = f"""
                         <div style='width:100%; min-width:280px; font-family:sans-serif;'>
-                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:10px; text-align:center; border-bottom:1px solid #ddd; padding-bottom:5px; position:relative;'>
+                            <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:3px; text-align:center; position:relative;'>
                                 {popup_title}
                                 <textarea id='{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
                                 <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
@@ -633,6 +641,10 @@ if df is not None:
                                     ta.style.display = 'none';
                                     alert('목록이 복사되었습니다!');
                                 " title="내용 복사"></i>
+                            </div>
+                            
+                            <div style='font-size:11px; color:#555; text-align:center; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                📍 {address_txt}
                             </div>
                             
                             <table style='width:100%; border-collapse:collapse; font-size:11px;'>
