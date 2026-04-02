@@ -343,11 +343,16 @@ if df is not None:
         elif '일련번호' in c: col_map['일련번호'] = col
 
     target_col = None
-    if len(df.columns) >= 14: target_col = df.columns[13]
-    if target_col is None:
-        for col in df.columns:
-            c = str(col).replace('▼', '').strip()
-            if any(k in c for k in ['출고', '날짜']): target_col = col; break
+    # 1. 이름으로 먼저 찾기 (출고, 날짜라는 단어가 들어간 열을 자동 탐색)
+    for col in df.columns:
+        c = str(col).replace('▼', '').strip()
+        if any(k in c for k in ['출고일']): 
+            target_col = col
+            break
+            
+    # 2. 만약 이름으로 못 찾았다면 기존처럼 위치(14번째 열)로 매핑
+    if target_col is None and len(df.columns) >= 14: 
+        target_col = df.columns[13]
 
     real_boyu = col_map.get('보유처')
     real_model = col_map.get('모델명', df.columns[0])
