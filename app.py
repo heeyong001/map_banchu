@@ -589,7 +589,6 @@ if df is not None:
                         # [핵심 추가] 복사하기 기능용 고유 ID 생성 및 텍스트 조합 로직
                         uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
                         region_txt = g['cached_region'].iloc[0]
-                        popup_title = f"{name}"region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{name}"
                         
                         # [추가된 로직] 매핑된 사업장주소 가져오기
