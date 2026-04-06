@@ -565,12 +565,12 @@ if df is not None:
                         
                         is_office = "반추" in str(name)
                         
-                        if len(u_cols) == 1:
+                       if len(u_cols) == 1:
                             c_name = u_cols[0]
                             hex_c, _ = get_real_color(c_name)
                             if hex_c.upper() == '#FFFFFF': bg_c, ic_c = "rgba(0,0,0,0.4)", "white"
                             else: bg_c, ic_c = "rgba(255,255,255,0.8)", hex_c
-                        else: bg_c, ic_c = "rgba(128,0,128,0.8)", "white"
+                        else: bg_c, ic_c = "transparent; background: linear-gradient(135deg, red, orange, yellow, green, blue, purple)", "white"
 
                         z = 1000 if st.session_state['clicked_store_name'] == name else 1
                         if st.session_state['clicked_store_name'] == name: bg_c, ic_c = "rgba(255,0,0,0.85)", "white"
