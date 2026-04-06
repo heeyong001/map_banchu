@@ -565,7 +565,7 @@ if df is not None:
                         
                         is_office = "반추" in str(name)
                         
-                       if len(u_cols) == 1:
+                        if len(u_cols) == 1:
                             c_name = u_cols[0]
                             hex_c, _ = get_real_color(c_name)
                             if hex_c.upper() == '#FFFFFF': bg_c, ic_c = "rgba(0,0,0,0.4)", "white"
