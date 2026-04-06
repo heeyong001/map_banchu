@@ -245,7 +245,7 @@ def get_real_color(korean_color):
     elif '핑크' in c: return '#FFC0CB', '#000000' 
     elif '그린' in c: return '#008000', '#FFFFFF' 
     elif '골드' in c or '옐로우' in c: return '#FFD700', '#000000' 
-    elif '퍼플' in c: return '#800080', '#FFFFFF' 
+    elif '퍼플' in c or '바이올렛' in c or 'violet' in c: return '#800080', '#FFFFFF'  # <-- [수정된 부분] 바이올렛 추가
     elif '레드' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
