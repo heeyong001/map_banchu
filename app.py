@@ -525,6 +525,12 @@ if df is not None:
     
     with c_region_dae:
         all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
+        
+        # [수정 1] 강원을 리스트 맨 마지막으로 이동
+        if "강원" in all_dae:
+            all_dae.remove("강원")
+            all_dae.append("강원")
+            
         selected_dae = st.multiselect("지역(대분류)", ["전체"] + all_dae, placeholder="전체")
         
     with c_region_so:
@@ -533,7 +539,25 @@ if df is not None:
         else:
             so_options_df = df
             
-        all_so = sorted([x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]])
+        raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
+        
+        # [수정 2] 소분류 그룹화 정렬 로직 (서울 -> 인천 -> 경기 -> 강원 순)
+        so_priority = {}
+        for so in raw_so:
+            prio = 5  # 기본값 (기타 지역)
+            if '사업장주소' in so_options_df.columns:
+                valid_addrs = so_options_df.loc[(so_options_df['소분류_캐시'] == so) & (so_options_df['사업장주소'].notna()), '사업장주소']
+                if not valid_addrs.empty:
+                    addr = str(valid_addrs.iloc[0]).strip()
+                    if addr.startswith("서울"): prio = 1
+                    elif addr.startswith("인천"): prio = 2
+                    elif addr.startswith("경기"): prio = 3
+                    elif addr.startswith("강원"): prio = 4
+            so_priority[so] = prio
+            
+        # 우선순위(prio)로 1차 정렬 후, 같은 그룹 내에서는 이름(x)으로 가나다순 2차 정렬
+        all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
+        
         selected_so = st.multiselect("지역(소분류)", ["전체"] + all_so, placeholder="전체 (대분류 선택 시 연동)")
         
     with c_owner:
