@@ -65,6 +65,22 @@ st.markdown("""
             margin-bottom: 15px;
         }
 
+        /* [핵심 수정: 검색조건 상하 간격 최소화 (PC 및 모바일)] */
+        .search-container div[data-testid="stVerticalBlock"] > div {
+            gap: 0.2rem !important;
+        }
+        .search-container .stMultiSelect {
+            margin-bottom: -10px !important;
+        }
+        @media (max-width: 768px) {
+            .search-container div[data-testid="stColumn"] {
+                margin-bottom: -15px !important;
+            }
+            .search-container .stMultiSelect {
+                margin-bottom: -5px !important;
+            }
+        }
+
         /* [일반 버튼 스타일] (조회 버튼 등) */
         div.stButton > button {
             width: 100%;
@@ -245,35 +261,40 @@ def get_real_color(korean_color):
     elif '핑크' in c: return '#FFC0CB', '#000000' 
     elif '그린' in c: return '#008000', '#FFFFFF' 
     elif '골드' in c or '옐로우' in c: return '#FFD700', '#000000' 
-    elif '퍼플' in c or '바이올렛' in c or 'violet' in c: return '#800080', '#FFFFFF'  # <-- [수정된 부분] 바이올렛 추가
+    elif '퍼플' in c or '바이올렛' in c or 'violet' in c: return '#800080', '#FFFFFF'
     elif '레드' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
 # ==============================================================================
 # [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
 # ==============================================================================
-# ==============================================================================
-# [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
-# ==============================================================================
 @st.cache_data
 def load_address_book():
-    # GitHub에 고정으로 올려둘 주소록 파일명 (실제 파일명과 맞춰주세요)
     addr_file = '판매여지도.xlsx' 
     
     if os.path.exists(addr_file):
         try:
-            # 엑셀 상단에 빈 줄이 3줄 있으므로 header=3 (4번째 줄부터 읽음)
             addr_df = pd.read_excel(addr_file, header=3, dtype=str)
         except:
             addr_df = pd.read_csv(addr_file, skiprows=3, dtype=str)
             
-        # [수정] '접점코드', '사업장주소'와 더불어 추가하신 'x좌표', 'y좌표'도 함께 추출
         use_cols = ['접점코드']
         if '사업장주소' in addr_df.columns: use_cols.append('사업장주소')
         if 'x좌표' in addr_df.columns: use_cols.append('x좌표')
         if 'y좌표' in addr_df.columns: use_cols.append('y좌표')
         
+        dae_col = None
+        for col in addr_df.columns:
+            if '대권역' in col: 
+                dae_col = col
+                use_cols.append(dae_col)
+                break
+                
         addr_df = addr_df[use_cols].dropna(subset=['접점코드'])
+        
+        if dae_col:
+            addr_df.rename(columns={dae_col: '대분류'}, inplace=True)
+            
         return addr_df
     return None
 
@@ -285,17 +306,14 @@ def load_data_optimized(file):
     if isinstance(file, str): df = pd.read_excel(file, dtype=str)
     else: df = pd.read_excel(file, dtype=str)
     
-    # 1. 주소록 맵핑 데이터 불러오기
     addr_df = load_address_book()
     
-    # 2. 업로드된 재고 데이터에서 '접점번호' 또는 '접점코드' 열 찾기
     target_code_col = None
     for col in df.columns:
         if '접점번호' in str(col) or '접점코드' in str(col):
             target_code_col = col
             break
             
-    # 3. 접점번호를 기준으로 두 데이터를 결합 (VLOOKUP 효과)
     if addr_df is not None and target_code_col is not None:
         df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
     
@@ -311,23 +329,67 @@ def load_data_optimized(file):
         
         final_lats = []
         final_lons = []
+        dae_list = []
+        so_list = []
+        so_unknown_list = []  # [핵심] 유추불가 플래그
+        
         for _, row in df.iterrows():
             f_lat, f_lon = None, None
+            dae_val = "미분류"
+            so_val = "미분류"
+            so_unknown = False
             
-            # [핵심 로직 변경] 1순위: 추가하신 'y좌표', 'x좌표'가 엑셀에 존재하면 그 숫자를 사용!
+            address_text = ""
+            if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
+                address_text = str(row['사업장주소']).strip()
+                
+            if '대분류' in df.columns and pd.notna(row['대분류']):
+                dae_val = str(row['대분류']).strip()
+                
+            # [핵심 로직 1] 대분류 이름 정리 (수도권, 범인천 제거)
+            dae_val = dae_val.replace('수도권', '').replace('범인천', '인천')
+                
+            if address_text:
+                parts = address_text.split()
+                if len(parts) >= 2:
+                    if parts[0] == "서울특별시":
+                        so_val = parts[1] # 구
+                    else:
+                        so_val = parts[1] # 시/군
+                        
+            # [핵심 로직 2] 집단상가 특수 구역 편입
+            if "집단상가" in dae_val:
+                if "서울특별시 광진구" in address_text:
+                    dae_val = "동북"
+                    so_val = "집단상가"
+                elif "서울특별시 구로구" in address_text:
+                    dae_val = "서남"
+                    so_val = "집단상가"
+            
+            # [핵심 로직 3] 미분류인 경우 텍스트 유추 및 플래그 세우기
+            store_name = str(row[boyu_col])
+            if dae_val == "미분류" or dae_val == "":
+                for key in ["인천", "남부", "동남", "동북", "서남", "서북", "강원"]:
+                    if key in store_name:
+                        dae_val = key
+                        break
+                # 대분류는 알았는데 소분류를 여전히 모른다면, "프리패스" 플래그 켬
+                if dae_val != "미분류" and so_val == "미분류":
+                    so_unknown = True
+                    so_val = "전체허용" # 드롭다운에 안 보이게 가림
+                        
+            dae_list.append(dae_val)
+            so_list.append(so_val)
+            so_unknown_list.append(so_unknown)
+            
             if 'y좌표' in df.columns and 'x좌표' in df.columns and pd.notna(row['y좌표']) and pd.notna(row['x좌표']):
                 try:
-                    # 마커가 완전히 겹쳐서 안 보이는 현상을 막기 위해 살짝 분산(Jitter) 적용
                     f_lat, f_lon = get_coordinate_smart_jitter(row[boyu_col], float(row['y좌표']), float(row['x좌표']))
                 except ValueError:
-                    pass # 좌표가 숫자가 아닌 경우 패스하고 아래 2순위로 넘어감
+                    pass
             
-            # 2순위: 좌표가 없거나 에러가 났다면 백업 로직으로 '주소/보유처명' 글자를 읽어서 대략적인 위치 검색
             if f_lat is None or f_lon is None:
-                if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
-                    search_text = row['사업장주소']
-                else:
-                    search_text = row[boyu_col]
+                search_text = address_text if address_text else row[boyu_col]
                 f_lat, f_lon = get_coordinate_priority(search_text, 37.5665, 126.9780)
                 
             final_lats.append(f_lat)
@@ -335,6 +397,10 @@ def load_data_optimized(file):
 
         df['cached_lat'] = final_lats
         df['cached_lon'] = final_lons
+        df['대분류_캐시'] = dae_list
+        df['소분류_캐시'] = so_list
+        df['소분류_유추불가'] = so_unknown_list
+        
         clean_names = df[boyu_col].str.replace(r'^[^-\s]*\d[^-\s]*-', '', regex=True)
         df['cached_region'] = clean_names.apply(get_region_category)
         df['cached_city'] = clean_names.apply(get_city_only)
@@ -358,21 +424,17 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
 
-# 새로고침 무한 루프 방지를 위한 업로드 기록 세션 추가
 if 'last_uploaded' not in st.session_state: 
     st.session_state['last_uploaded'] = None
 
 if uploaded_file:
-    # 파일 이름과 크기로 고유 식별자 생성 (동일 파일 중복 실행 방지)
     current_file_id = f"{uploaded_file.name}_{uploaded_file.size}"
-    
-    # 이전에 업로드한 파일과 다를 때만(새 파일일 때만) 실행
     if st.session_state['last_uploaded'] != current_file_id:
         try:
             with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
             with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
             
-            st.session_state['last_uploaded'] = current_file_id  # 현재 파일 처리 완료 기록
+            st.session_state['last_uploaded'] = current_file_id
             st.success("저장 완료")
             st.cache_data.clear()
             st.rerun()
@@ -405,14 +467,12 @@ if df is not None:
         elif '일련번호' in c: col_map['일련번호'] = col
 
     target_col = None
-    # 1. 이름으로 먼저 찾기 (출고, 날짜라는 단어가 들어간 열을 자동 탐색)
     for col in df.columns:
         c = str(col).replace('▼', '').strip()
         if any(k in c for k in ['출고일']): 
             target_col = col
             break
             
-    # 2. 만약 이름으로 못 찾았다면 기존처럼 위치(14번째 열)로 매핑
     if target_col is None and len(df.columns) >= 14: 
         target_col = df.columns[13]
 
@@ -461,17 +521,33 @@ if df is not None:
         else:
             st.write("-")
 
-    c_region, c_owner = st.columns(2)
-    with c_region:
-        reg_ord = ["전체", "사무실", "동남", "동북", "서남", "서북", "남부", "강원", "인천", "강변TM", "신도림TM"]
-        selected_regions = st.multiselect("지역", reg_ord, default=["사무실"], placeholder="전체")
+    c_region_dae, c_region_so, c_owner = st.columns(3)
+    
+    with c_region_dae:
+        all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
+        selected_dae = st.multiselect("지역(대분류)", ["전체"] + all_dae, placeholder="전체")
+        
+    with c_region_so:
+        if selected_dae and "전체" not in selected_dae:
+            so_options_df = df[df['대분류_캐시'].isin(selected_dae)]
+        else:
+            so_options_df = df
+            
+        all_so = sorted([x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]])
+        selected_so = st.multiselect("지역(소분류)", ["전체"] + all_so, placeholder="전체 (대분류 선택 시 연동)")
+        
     with c_owner:
         owner_df = df.copy()
         if selected_models:
             owner_df = owner_df[owner_df[real_model].isin(selected_models)]
-        
         if real_color and selected_colors and "전체" not in selected_colors:
             owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
+        if selected_dae and "전체" not in selected_dae:
+            owner_df = owner_df[owner_df['대분류_캐시'].isin(selected_dae)]
+        if selected_so and "전체" not in selected_so:
+            # [핵심 로직] 소분류 선택 시 유추불가 플래그가 있는 항목도 같이 허용
+            mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
+            owner_df = owner_df[mask]
             
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
         selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
@@ -495,17 +571,13 @@ if df is not None:
             if selected_owners and "전체" not in selected_owners:
                 temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
             
-            if selected_regions and "전체" not in selected_regions:
-                if "사무실" in selected_regions:
-                    office_mask = temp_df[real_boyu].astype(str).str.contains("반추", na=False)
-                    other_regions = [r for r in selected_regions if r != "사무실"]
-                    if other_regions:
-                        region_mask = temp_df['cached_region'].isin(other_regions)
-                        temp_df = temp_df[office_mask | region_mask]
-                    else:
-                        temp_df = temp_df[office_mask]
-                else:
-                    temp_df = temp_df[temp_df['cached_region'].isin(selected_regions)]
+            if selected_dae and "전체" not in selected_dae:
+                temp_df = temp_df[temp_df['대분류_캐시'].isin(selected_dae)]
+                
+            if selected_so and "전체" not in selected_so:
+                # [핵심 로직] 소분류 선택 시 유추불가 플래그가 있는 항목도 결과에 포함
+                mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
+                temp_df = temp_df[mask]
             
             temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
             map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
@@ -586,19 +658,15 @@ if df is not None:
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
                         
-                        # [핵심 추가] 복사하기 기능용 고유 ID 생성 및 텍스트 조합 로직
                         uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
-                        region_txt = g['cached_region'].iloc[0]
                         popup_title = f"{name}"
                         
-                        # [추가된 로직] 매핑된 사업장주소 가져오기
                         address_txt = ""
                         if '사업장주소' in g.columns and pd.notna(g['사업장주소'].iloc[0]) and str(g['사업장주소'].iloc[0]).strip() != "":
                             address_txt = str(g['사업장주소'].iloc[0])
                         else:
                             address_txt = "주소 미등록"
                             
-                        # [수정] 복사되는 텍스트 첫머리에 주소(address_txt) 추가
                         copy_text_lines = [f"[{popup_title}]", f"📍 {address_txt}", ""]
                         
                         agg_cols = [real_model]
@@ -621,13 +689,10 @@ if df is not None:
                             
                             t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
                             
-                            # 복사 내용에서 수량 제거
                             copy_text_lines.append(f"{r[real_model]} | {cn} | {stt} | {tgt}")
                             
-                        # 복사될 최종 텍스트 완성 후 끝에 멘트 추가
                         copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
-                        # [수정된 부분] 팝업창 HTML: 보유처명 밑에 주소(address_txt) 추가 표시
                         popup_html = f"""
                         <div style='width:100%; min-width:280px; font-family:sans-serif;'>
                             <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:3px; text-align:center; position:relative;'>
@@ -698,9 +763,6 @@ if df is not None:
 
             # 오른쪽: 리스트 뷰
             with list_col:
-                # =========================================================
-                # [핵심 수정] 정렬 옵션 그룹화 (기준: 보유처명/출고일순, 방향: 내림차순/오름차순)
-                # =========================================================
                 col_s1, col_s2 = st.columns(2)
                 with col_s1:
                     sort_target = st.radio("기준", ["보유처명", "출고일순"], index=0, horizontal=True, label_visibility="collapsed")
@@ -711,7 +773,6 @@ if df is not None:
                 sort_by_col = real_target if sort_target == "출고일순" and real_target else real_boyu
                 
                 list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
-                # =========================================================
 
                 with st.container(height=500):
                     st.markdown("""<style>
