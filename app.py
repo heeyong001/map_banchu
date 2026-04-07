@@ -488,9 +488,6 @@ if df is not None:
     c_model, c_color = st.columns(2)
     
     with c_model:
-        raw_models = df[real_model].unique().tolist()c_model, c_color = st.columns(2)
-    
-    with c_model:
         raw_models = df[real_model].unique().tolist()
         display_options = []
         grouped_items = []
@@ -519,8 +516,8 @@ if df is not None:
             else:
                 sorted_colors = sorted(df[real_color].dropna().unique().tolist())
             
-            # "전체" 항목 삭제
-            selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
+            av_c = ["전체"] + sorted_colors
+            selected_colors = st.multiselect("색상", av_c, placeholder=color_placeholder)
         else:
             st.write("-")
 
@@ -529,24 +526,25 @@ if df is not None:
     with c_region_dae:
         all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
         
+        # [수정 1] 강원을 리스트 맨 마지막으로 이동
         if "강원" in all_dae:
             all_dae.remove("강원")
             all_dae.append("강원")
             
-        # "전체" 항목 삭제
-        selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
+        selected_dae = st.multiselect("지역(대분류)", ["전체"] + all_dae, placeholder="전체")
         
     with c_region_so:
-        if selected_dae:
+        if selected_dae and "전체" not in selected_dae:
             so_options_df = df[df['대분류_캐시'].isin(selected_dae)]
         else:
             so_options_df = df
             
         raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
         
+        # [수정 2] 소분류 그룹화 정렬 로직 (서울 -> 인천 -> 경기 -> 강원 순)
         so_priority = {}
         for so in raw_so:
-            prio = 5 
+            prio = 5  # 기본값 (기타 지역)
             if '사업장주소' in so_options_df.columns:
                 valid_addrs = so_options_df.loc[(so_options_df['소분류_캐시'] == so) & (so_options_df['사업장주소'].notna()), '사업장주소']
                 if not valid_addrs.empty:
@@ -557,29 +555,29 @@ if df is not None:
                     elif addr.startswith("강원"): prio = 4
             so_priority[so] = prio
             
+        # 우선순위(prio)로 1차 정렬 후, 같은 그룹 내에서는 이름(x)으로 가나다순 2차 정렬
         all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
         
-        # "전체" 항목 삭제
-        selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")
+        selected_so = st.multiselect("지역(소분류)", ["전체"] + all_so, placeholder="전체 (대분류 선택 시 연동)")
         
     with c_owner:
         owner_df = df.copy()
         if selected_models:
             owner_df = owner_df[owner_df[real_model].isin(selected_models)]
-        if real_color and selected_colors:
+        if real_color and selected_colors and "전체" not in selected_colors:
             owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
-        if selected_dae:
+        if selected_dae and "전체" not in selected_dae:
             owner_df = owner_df[owner_df['대분류_캐시'].isin(selected_dae)]
-        if selected_so:
+        if selected_so and "전체" not in selected_so:
+            # [핵심 로직] 소분류 선택 시 유추불가 플래그가 있는 항목도 같이 허용
             mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
             owner_df = owner_df[mask]
             
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
-        # "전체" 항목 삭제
-        selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
+        selected_owners = st.multiselect("보유처", ["전체"] + all_owners, placeholder="미선택 시 전체")
 
     if st.button("🚀 조회하기", use_container_width=True):
-        is_specific_owner = bool(selected_owners)
+        is_specific_owner = selected_owners and "전체" not in selected_owners
         
         if not selected_models and not is_specific_owner:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
@@ -591,16 +589,17 @@ if df is not None:
             if selected_models:
                 temp_df = temp_df[temp_df[real_model].isin(selected_models)]
             
-            if selected_colors:
+            if selected_colors and "전체" not in selected_colors:
                 temp_df = temp_df[temp_df[real_color].isin(selected_colors)]
                 
-            if selected_owners:
+            if selected_owners and "전체" not in selected_owners:
                 temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
             
-            if selected_dae:
+            if selected_dae and "전체" not in selected_dae:
                 temp_df = temp_df[temp_df['대분류_캐시'].isin(selected_dae)]
                 
-            if selected_so:
+            if selected_so and "전체" not in selected_so:
+                # [핵심 로직] 소분류 선택 시 유추불가 플래그가 있는 항목도 결과에 포함
                 mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
                 temp_df = temp_df[mask]
             
