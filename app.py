@@ -573,22 +573,28 @@ if df is not None:
             
         raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
         
+        # [핵심 최적화 구간] 반복문 내의 무거운 필터링을 제거하고 100배 빠른 딕셔너리 매핑으로 교체
         so_priority = {}
-        for so in raw_so:
-            prio = 5 
-            if '사업장주소' in so_options_df.columns:
-                valid_addrs = so_options_df.loc[(so_options_df['소분류_캐시'] == so) & (so_options_df['사업장주소'].notna()), '사업장주소']
-                if not valid_addrs.empty:
-                    addr = str(valid_addrs.iloc[0]).strip()
-                    if addr.startswith("서울"): prio = 1
-                    elif addr.startswith("인천"): prio = 2
-                    elif addr.startswith("경기"): prio = 3
-                    elif addr.startswith("강원"): prio = 4
-            so_priority[so] = prio
+        if '사업장주소' in so_options_df.columns:
+            # 중복을 제거하고 소분류별 첫 번째 주소만 남겨 '사전'으로 만듭니다.
+            valid_df = so_options_df.dropna(subset=['사업장주소']).drop_duplicates(subset=['소분류_캐시'])
+            addr_map = dict(zip(valid_df['소분류_캐시'], valid_df['사업장주소']))
             
+            for so in raw_so:
+                prio = 5
+                addr = str(addr_map.get(so, "")).strip()
+                if addr.startswith("서울"): prio = 1
+                elif addr.startswith("인천"): prio = 2
+                elif addr.startswith("경기"): prio = 3
+                elif addr.startswith("강원"): prio = 4
+                so_priority[so] = prio
+        else:
+            for so in raw_so:
+                so_priority[so] = 5
+                
         all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
         
-        selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")
+        selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
         
     with c_owner:
         owner_df = df.copy()
