@@ -218,18 +218,34 @@ NEIGHBORHOOD_COORDS = {
 def get_region_category(text):
     if pd.isna(text): return "기타"
     text = str(text).strip()
+    best_match = None
+    best_idx = len(text)
     for key in ["강변TM", "신도림TM", "동남", "동북", "서남", "서북", "남부", "강원", "인천"]:
-        if key in text: return key
-    return "기타"
+        idx = text.find(key)
+        if idx != -1 and idx < best_idx: # 글자 앞쪽에 있을수록 우선순위 높음
+            best_idx = idx
+            best_match = key
+    return best_match if best_match else "기타"
 
 def get_city_only(text):
     if pd.isna(text): return "미분류(서울)"
     text = str(text)
+    best_match = None
+    best_idx = len(text)
+    
     for dong in NEIGHBORHOOD_COORDS.keys():
-        if dong in text: return dong
+        idx = text.find(dong)
+        if idx != -1 and idx < best_idx:
+            best_idx = idx
+            best_match = dong
+            
     for dist in DISTRICT_CENTERS.keys():
-        if dist in text: return dist
-    return "미분류(서울)"
+        idx = text.find(dist)
+        if idx != -1 and idx < best_idx:
+            best_idx = idx
+            best_match = dist
+            
+    return best_match if best_match else "미분류(서울)"
 
 def get_coordinate_smart_jitter(store_name, base_lat, base_lon):
     if "반추" in str(store_name): return base_lat, base_lon
@@ -243,12 +259,26 @@ def get_coordinate_smart_jitter(store_name, base_lat, base_lon):
 def get_coordinate_priority(text, base_lat, base_lon):
     if pd.isna(text): return base_lat, base_lon
     text = str(text)
+    best_coords = None
+    best_idx = len(text)
+    
+    # 1. 동네 단위 우선순위 검색 (앞쪽 글자 매칭 우선)
     for name, coords in NEIGHBORHOOD_COORDS.items():
-        if name in text:
-            return get_coordinate_smart_jitter(text, coords[0], coords[1])
+        idx = text.find(name)
+        if idx != -1 and idx < best_idx:
+            best_idx = idx
+            best_coords = coords
+            
+    # 2. 구 단위 검색 (동네 단위보다 더 앞쪽에 키워드가 있다면 갱신)
     for name, coords in DISTRICT_CENTERS.items():
-        if name in text:
-            return get_coordinate_smart_jitter(text, coords[0], coords[1])
+        idx = text.find(name)
+        if idx != -1 and idx < best_idx:
+            best_idx = idx
+            best_coords = coords
+            
+    if best_coords is not None:
+        return get_coordinate_smart_jitter(text, best_coords[0], best_coords[1])
+        
     return get_coordinate_smart_jitter(text, base_lat, base_lon)
 
 def get_real_color(korean_color):
@@ -295,6 +325,9 @@ def load_address_book():
         if dae_col:
             addr_df.rename(columns={dae_col: '대분류'}, inplace=True)
             
+        # [핵심 수정 1] 판매여지도 접점코드의 숨겨진 공백(띄어쓰기) 강제 제거
+        addr_df['접점코드'] = addr_df['접점코드'].astype(str).str.strip()
+            
         return addr_df
     return None
 
@@ -314,6 +347,10 @@ def load_data_optimized(file):
             target_code_col = col
             break
             
+    # [핵심 수정 2] 재고표 접점코드의 숨겨진 공백(띄어쓰기) 강제 제거
+    if target_code_col is not None:
+        df[target_code_col] = df[target_code_col].astype(str).str.strip()
+            
     if addr_df is not None and target_code_col is not None:
         df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
     
@@ -331,7 +368,7 @@ def load_data_optimized(file):
         final_lons = []
         dae_list = []
         so_list = []
-        so_unknown_list = []  # [핵심] 유추불가 플래그
+        so_unknown_list = []  
         
         for _, row in df.iterrows():
             f_lat, f_lon = None, None
@@ -346,18 +383,16 @@ def load_data_optimized(file):
             if '대분류' in df.columns and pd.notna(row['대분류']):
                 dae_val = str(row['대분류']).strip()
                 
-            # [핵심 로직 1] 대분류 이름 정리 (수도권, 범인천 제거)
             dae_val = dae_val.replace('수도권', '').replace('범인천', '인천')
                 
             if address_text:
                 parts = address_text.split()
                 if len(parts) >= 2:
                     if parts[0] == "서울특별시":
-                        so_val = parts[1] # 구
+                        so_val = parts[1] 
                     else:
-                        so_val = parts[1] # 시/군
+                        so_val = parts[1] 
                         
-            # [핵심 로직 2] 집단상가 특수 구역 편입
             if "집단상가" in dae_val:
                 if "서울특별시 광진구" in address_text:
                     dae_val = "동북"
@@ -366,17 +401,24 @@ def load_data_optimized(file):
                     dae_val = "서남"
                     so_val = "집단상가"
             
-            # [핵심 로직 3] 미분류인 경우 텍스트 유추 및 플래그 세우기
             store_name = str(row[boyu_col])
             if dae_val == "미분류" or dae_val == "":
+                best_dae = None
+                best_idx = len(store_name)
+                
+                # 대분류 역시 이름 앞쪽에 있는 키워드를 무조건 우선 매칭
                 for key in ["인천", "남부", "동남", "동북", "서남", "서북", "강원"]:
-                    if key in store_name:
-                        dae_val = key
-                        break
-                # 대분류는 알았는데 소분류를 여전히 모른다면, "프리패스" 플래그 켬
+                    idx = store_name.find(key)
+                    if idx != -1 and idx < best_idx:
+                        best_idx = idx
+                        best_dae = key
+                        
+                if best_dae:
+                    dae_val = best_dae
+                    
                 if dae_val != "미분류" and so_val == "미분류":
                     so_unknown = True
-                    so_val = "전체허용" # 드롭다운에 안 보이게 가림
+                    so_val = "전체허용"
                         
             dae_list.append(dae_val)
             so_list.append(so_val)
