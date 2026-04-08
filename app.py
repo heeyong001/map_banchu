@@ -617,10 +617,15 @@ if df is not None:
         # "전체" 항목 삭제
         selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
+    # [핵심 추가] 평소에는 접혀있는(Expander) 고급 검색 옵션 추가
+    with st.expander("🛠️ 고급 검색 옵션 (미매칭 보유처 확인)"):
+        unmapped_only = st.checkbox("⚠️ 판매여지도 미매칭(주소 없음) 보유처만 모아보기", help="판매여지도 엑셀에 등록되지 않아 주소를 매핑하지 못한 매장들만 검색합니다.")
+
     if st.button("🚀 조회하기", use_container_width=True):
         is_specific_owner = bool(selected_owners)
         
-        if not selected_models and not is_specific_owner:
+        # 미매칭 체크 시, 모델을 선택하지 않아도 바로 조회 가능하도록 예외 처리
+        if not selected_models and not is_specific_owner and not unmapped_only:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
         else:
             st.session_state['search_clicked'] = True
@@ -642,6 +647,11 @@ if df is not None:
             if selected_so:
                 mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
                 temp_df = temp_df[mask]
+                
+            # [핵심 로직] 미매칭 체크박스 활성화 시 VLOOKUP 실패(주소 없음) 데이터만 필터링
+            if unmapped_only:
+                if '사업장주소' in temp_df.columns:
+                    temp_df = temp_df[temp_df['사업장주소'].isna() | (temp_df['사업장주소'].astype(str).str.strip() == "") | (temp_df['사업장주소'].astype(str).str.lower() == "nan")]
             
             temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
             map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
