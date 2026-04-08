@@ -650,7 +650,7 @@ if df is not None:
                 mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
                 temp_df = temp_df[mask]
                 
-           if unmapped_only:
+            if unmapped_only:
                 if '사업장주소' in temp_df.columns:
                     # 1. 주소가 비어있는 데이터 추출
                     empty_mask = temp_df['사업장주소'].isna() | (temp_df['사업장주소'].astype(str).str.strip() == "") | (temp_df['사업장주소'].astype(str).str.lower() == "nan")
@@ -658,6 +658,8 @@ if df is not None:
                     not_banchu_mask = ~temp_df[real_boyu].astype(str).str.contains("반추", na=False)
                     
                     temp_df = temp_df[empty_mask & not_banchu_mask]
+            
+            temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
             map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
             
             st.session_state['filtered_data'] = {'list': temp_df, 'map': map_filtered_df}
