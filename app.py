@@ -739,7 +739,10 @@ if df is not None:
                         popup_title = f"{name}"
                         
                         address_txt = ""
-                        if '사업장주소' in g.columns and pd.notna(g['사업장주소'].iloc[0]) and str(g['사업장주소'].iloc[0]).strip() != "":
+                        # [기능 업데이트] 팝업창 출력 시 사무실(반추) 주소 강제 매핑
+                        if is_office:
+                            address_txt = "서울특별시 영등포구 경인로775 에이스하이테크 417호"
+                        elif '사업장주소' in g.columns and pd.notna(g['사업장주소'].iloc[0]) and str(g['사업장주소'].iloc[0]).strip() != "":
                             address_txt = str(g['사업장주소'].iloc[0])
                         else:
                             address_txt = "주소 미등록"
