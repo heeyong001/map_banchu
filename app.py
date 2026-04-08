@@ -3,14 +3,13 @@ import pandas as pd
 import folium
 from folium.features import DivIcon
 from streamlit_folium import st_folium
-from branca.element import Element  # 에러 방지를 위해 추가된 직접 주입 모듈
+from branca.element import Element  
 import random
 import os
 import hashlib
 import json
 
 # [기능 추가] 모바일 제스처 처리를 위한 플러그인 확인
-# 한 손가락 스크롤 / 두 손가락 줌 기능을 담당합니다.
 try:
     from folium.plugins import GestureHandling
     gesture_handling_available = True
@@ -29,11 +28,10 @@ if 'clicked_store_name' not in st.session_state: st.session_state['clicked_store
 if 'search_clicked' not in st.session_state: st.session_state['search_clicked'] = False
 
 # ==============================================================================
-# [스타일] UI 디자인 (유지: 고밀도 리스트 뷰 - 한 화면 최대 표시)
+# [스타일] UI 디자인
 # ==============================================================================
 st.markdown("""
     <style>
-        /* 기본 여백 조정 */
         .block-container {
             padding-top: 3.5rem !important; 
             padding-bottom: 3rem !important;
@@ -65,7 +63,6 @@ st.markdown("""
             margin-bottom: 15px;
         }
 
-        /* [핵심 수정: 검색조건 상하 간격 최소화 (PC 및 모바일)] */
         .search-container div[data-testid="stVerticalBlock"] > div {
             gap: 0.2rem !important;
         }
@@ -81,7 +78,6 @@ st.markdown("""
             }
         }
 
-        /* [일반 버튼 스타일] (조회 버튼 등) */
         div.stButton > button {
             width: 100%;
             height: auto;
@@ -95,25 +91,18 @@ st.markdown("""
             box-shadow: 0 4px 6px rgba(0,0,0,0.2);
         }
 
-        /* [리스트 내부 버튼 스타일: 고밀도 리스트 형태 유지] */
         div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button {
             background: white !important;           
             color: #333 !important;                 
-            
-            /* 테두리를 없애고 하단 구분선만 사용하여 엑셀/리스트 느낌으로 변경 */
             border: none !important;
             border-bottom: 1px solid #f0f0f0 !important; 
-            border-left: 4px solid #764ba2 !important; /* 식별용 왼쪽 라인 유지 */
+            border-left: 4px solid #764ba2 !important; 
             border-radius: 0px !important;          
-            
             text-align: left !important;            
             box-shadow: none !important;            
-            
-            /* 크기 최소화 및 1줄 표시 최적화 */
             padding: 6px 8px !important;            
             margin-bottom: 1px !important;          
             margin-top: 0px !important;
-            
             line-height: 1.2 !important;            
             height: auto !important;                
             min-height: 0px !important;             
@@ -122,7 +111,6 @@ st.markdown("""
             font-size: 13px !important;             
         }
 
-        /* 리스트 선택 시(Active) 효과 */
         div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:active,
         div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button:focus {
             background-color: #f3e5f5 !important;   
@@ -131,11 +119,9 @@ st.markdown("""
             font-weight: bold !important;
         }
 
-        /* 사이드바 및 기타 조정 */
         section[data-testid="stSidebar"] { background-color: #f8f9fa; }
         ul[data-testid="stVirtualDropdown"] { max-height: 200px !important; }
         
-        /* 모바일 최적화 */
         @media (max-width: 768px) {
             div[data-testid="stVerticalBlockBorderWrapper"] div.stButton > button {
                 font-size: 12px !important;       
@@ -186,7 +172,8 @@ DISTRICT_CENTERS = {
 }
 
 NEIGHBORHOOD_COORDS = {
-    "반추": [37.5156, 126.8950], "반추정보통신": [37.5156, 126.8950],
+    # [수정] 사무실(반추) 좌표 영등포구 에이스하이테크로 업데이트
+    "반추": [37.5144447, 126.8987734], "반추정보통신": [37.5144447, 126.8987734],
     "신도림TM": [37.5087, 126.8905], "테크노": [37.5351, 127.0957], "강변TM": [37.5351, 127.0957],
     "신원": [37.6744, 126.8653], "화정": [37.6346, 126.8326], "성사": [37.6533, 126.8430],
     "삼송": [37.6530, 126.8950], "원흥": [37.6500, 126.8730], "배곧": [37.3705, 126.7335],
@@ -222,7 +209,7 @@ def get_region_category(text):
     best_idx = len(text)
     for key in ["강변TM", "신도림TM", "동남", "동북", "서남", "서북", "남부", "강원", "인천"]:
         idx = text.find(key)
-        if idx != -1 and idx < best_idx: # 글자 앞쪽에 있을수록 우선순위 높음
+        if idx != -1 and idx < best_idx: 
             best_idx = idx
             best_match = key
     return best_match if best_match else "기타"
@@ -262,14 +249,12 @@ def get_coordinate_priority(text, base_lat, base_lon):
     best_coords = None
     best_idx = len(text)
     
-    # 1. 동네 단위 우선순위 검색 (앞쪽 글자 매칭 우선)
     for name, coords in NEIGHBORHOOD_COORDS.items():
         idx = text.find(name)
         if idx != -1 and idx < best_idx:
             best_idx = idx
             best_coords = coords
             
-    # 2. 구 단위 검색 (동네 단위보다 더 앞쪽에 키워드가 있다면 갱신)
     for name, coords in DISTRICT_CENTERS.items():
         idx = text.find(name)
         if idx != -1 and idx < best_idx:
@@ -295,9 +280,6 @@ def get_real_color(korean_color):
     elif '레드' in c: return '#FF0000', '#FFFFFF' 
     return '#3388ff', '#000000'
 
-# ==============================================================================
-# [새로 추가된 함수] GitHub에 올려둔 주소록 파일(판매여지도)을 읽어오는 기능
-# ==============================================================================
 @st.cache_data
 def load_address_book():
     addr_file = '판매여지도.xlsx' 
@@ -325,15 +307,11 @@ def load_address_book():
         if dae_col:
             addr_df.rename(columns={dae_col: '대분류'}, inplace=True)
             
-        # [핵심 수정 1] 판매여지도 접점코드의 숨겨진 공백(띄어쓰기) 강제 제거
         addr_df['접점코드'] = addr_df['접점코드'].astype(str).str.strip()
             
         return addr_df
     return None
 
-# ==============================================================================
-# [수정된 함수] 재고 데이터와 주소록 데이터를 병합(Merge)하여 좌표 할당
-# ==============================================================================
 @st.cache_data
 def load_data_optimized(file):
     if isinstance(file, str): df = pd.read_excel(file, dtype=str)
@@ -347,7 +325,6 @@ def load_data_optimized(file):
             target_code_col = col
             break
             
-    # [핵심 수정 2] 재고표 접점코드의 숨겨진 공백(띄어쓰기) 강제 제거
     if target_code_col is not None:
         df[target_code_col] = df[target_code_col].astype(str).str.strip()
             
@@ -376,49 +353,55 @@ def load_data_optimized(file):
             so_val = "미분류"
             so_unknown = False
             
-            address_text = ""
-            if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
-                address_text = str(row['사업장주소']).strip()
-                
-            if '대분류' in df.columns and pd.notna(row['대분류']):
-                dae_val = str(row['대분류']).strip()
-                
-            dae_val = dae_val.replace('수도권', '').replace('범인천', '인천')
-                
-            if address_text:
-                parts = address_text.split()
-                if len(parts) >= 2:
-                    if parts[0] == "서울특별시":
-                        so_val = parts[1] 
-                    else:
-                        so_val = parts[1] 
-                        
-            if "집단상가" in dae_val:
-                if "서울특별시 광진구" in address_text:
-                    dae_val = "동북"
-                    so_val = "집단상가"
-                elif "서울특별시 구로구" in address_text:
-                    dae_val = "서남"
-                    so_val = "집단상가"
-            
             store_name = str(row[boyu_col])
-            if dae_val == "미분류" or dae_val == "":
-                best_dae = None
-                best_idx = len(store_name)
-                
-                # 대분류 역시 이름 앞쪽에 있는 키워드를 무조건 우선 매칭
-                for key in ["인천", "남부", "동남", "동북", "서남", "서북", "강원"]:
-                    idx = store_name.find(key)
-                    if idx != -1 and idx < best_idx:
-                        best_idx = idx
-                        best_dae = key
-                        
-                if best_dae:
-                    dae_val = best_dae
+            address_text = ""
+            
+            # [수정] 사무실(반추) 서남/영등포구로 강제 편입
+            if "반추" in store_name:
+                dae_val = "서남"
+                so_val = "영등포구"
+                address_text = "서울특별시 영등포구 경인로775 에이스하이테크 417호"
+            else:
+                if '사업장주소' in df.columns and pd.notna(row['사업장주소']) and str(row['사업장주소']).strip() != "":
+                    address_text = str(row['사업장주소']).strip()
                     
-                if dae_val != "미분류" and so_val == "미분류":
-                    so_unknown = True
-                    so_val = "전체허용"
+                if '대분류' in df.columns and pd.notna(row['대분류']):
+                    dae_val = str(row['대분류']).strip()
+                
+                dae_val = dae_val.replace('수도권', '').replace('범인천', '인천')
+                    
+                if address_text:
+                    parts = address_text.split()
+                    if len(parts) >= 2:
+                        if parts[0] == "서울특별시":
+                            so_val = parts[1] 
+                        else:
+                            so_val = parts[1] 
+                            
+                if "집단상가" in dae_val:
+                    if "서울특별시 광진구" in address_text:
+                        dae_val = "동북"
+                        so_val = "집단상가"
+                    elif "서울특별시 구로구" in address_text:
+                        dae_val = "서남"
+                        so_val = "집단상가"
+                
+                if dae_val == "미분류" or dae_val == "":
+                    best_dae = None
+                    best_idx = len(store_name)
+                    
+                    for key in ["인천", "남부", "동남", "동북", "서남", "서북", "강원"]:
+                        idx = store_name.find(key)
+                        if idx != -1 and idx < best_idx:
+                            best_idx = idx
+                            best_dae = key
+                            
+                    if best_dae:
+                        dae_val = best_dae
+                        
+                    if dae_val != "미분류" and so_val == "미분류":
+                        so_unknown = True
+                        so_val = "전체허용"
                         
             dae_list.append(dae_val)
             so_list.append(so_val)
@@ -558,7 +541,6 @@ if df is not None:
             else:
                 sorted_colors = sorted(df[real_color].dropna().unique().tolist())
             
-            # "전체" 항목 삭제
             selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
         else:
             st.write("-")
@@ -572,12 +554,20 @@ if df is not None:
             all_dae.remove("강원")
             all_dae.append("강원")
             
-        # "전체" 항목 삭제
+        # [수정] 사무실 전용 버튼 대분류에 추가
+        if "사무실(반추정보통신)" not in all_dae:
+            all_dae.insert(0, "사무실(반추정보통신)")
+            
         selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
         
     with c_region_so:
         if selected_dae:
-            so_options_df = df[df['대분류_캐시'].isin(selected_dae)]
+            # 사무실 필터링 스마트 처리 
+            actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+            mask_so = df['대분류_캐시'].isin(actual_dae)
+            if "사무실(반추정보통신)" in selected_dae:
+                mask_so |= df[real_boyu].astype(str).str.contains("반추", na=False)
+            so_options_df = df[mask_so]
         else:
             so_options_df = df
             
@@ -598,7 +588,6 @@ if df is not None:
             
         all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
         
-        # "전체" 항목 삭제
         selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")
         
     with c_owner:
@@ -607,24 +596,27 @@ if df is not None:
             owner_df = owner_df[owner_df[real_model].isin(selected_models)]
         if real_color and selected_colors:
             owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
+            
         if selected_dae:
-            owner_df = owner_df[owner_df['대분류_캐시'].isin(selected_dae)]
+            actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+            mask_owner = owner_df['대분류_캐시'].isin(actual_dae)
+            if "사무실(반추정보통신)" in selected_dae:
+                mask_owner |= owner_df[real_boyu].astype(str).str.contains("반추", na=False)
+            owner_df = owner_df[mask_owner]
+            
         if selected_so:
             mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
             owner_df = owner_df[mask]
             
         all_owners = sorted(owner_df[real_boyu].unique().tolist())
-        # "전체" 항목 삭제
         selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
-    # [핵심 추가] 평소에는 접혀있는(Expander) 고급 검색 옵션 추가
     with st.expander("🛠️ 고급 검색 옵션 (미매칭 보유처 확인)"):
         unmapped_only = st.checkbox("⚠️ 판매여지도 미매칭(주소 없음) 보유처만 모아보기", help="판매여지도 엑셀에 등록되지 않아 주소를 매핑하지 못한 매장들만 검색합니다.")
 
     if st.button("🚀 조회하기", use_container_width=True):
         is_specific_owner = bool(selected_owners)
         
-        # 미매칭 체크 시, 모델을 선택하지 않아도 바로 조회 가능하도록 예외 처리
         if not selected_models and not is_specific_owner and not unmapped_only:
             st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
         else:
@@ -642,13 +634,16 @@ if df is not None:
                 temp_df = temp_df[temp_df[real_boyu].isin(selected_owners)]
             
             if selected_dae:
-                temp_df = temp_df[temp_df['대분류_캐시'].isin(selected_dae)]
+                actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+                mask_temp = temp_df['대분류_캐시'].isin(actual_dae)
+                if "사무실(반추정보통신)" in selected_dae:
+                    mask_temp |= temp_df[real_boyu].astype(str).str.contains("반추", na=False)
+                temp_df = temp_df[mask_temp]
                 
             if selected_so:
                 mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
                 temp_df = temp_df[mask]
                 
-            # [핵심 로직] 미매칭 체크박스 활성화 시 VLOOKUP 실패(주소 없음) 데이터만 필터링
             if unmapped_only:
                 if '사업장주소' in temp_df.columns:
                     temp_df = temp_df[temp_df['사업장주소'].isna() | (temp_df['사업장주소'].astype(str).str.strip() == "") | (temp_df['사업장주소'].astype(str).str.lower() == "nan")]
@@ -723,11 +718,13 @@ if df is not None:
 
                         icon_shape = "fa-mobile"
                         border_style = "border-radius: 50%;"
+                        
+                        # [수정] 사무실 빨간색 별표 티커 표시
                         if is_office:
                             icon_shape = "fa-star"
-                            bg_c = "rgba(255, 255, 0, 0.9)"
-                            ic_c = "red"
-                            border_style = "border-radius: 10%; border: 2px solid red;"
+                            bg_c = "rgba(255, 0, 0, 0.9)"
+                            ic_c = "white"
+                            border_style = "border-radius: 10%; border: 2px solid white;"
 
                         t_rows = ""
                         td_style = "border:1px solid #000; padding:5px; text-align:center;"
