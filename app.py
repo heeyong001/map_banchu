@@ -381,10 +381,10 @@ def load_data_optimized(file):
                 if "집단상가" in dae_val:
                     if "서울특별시 광진구" in address_text:
                         dae_val = "동북"
-                        so_val = "집단상가"
+                        so_val = "광진구"
                     elif "서울특별시 구로구" in address_text:
                         dae_val = "서남"
-                        so_val = "집단상가"
+                        so_val = "구로구"
                 
                 if dae_val == "미분류" or dae_val == "":
                     best_dae = None
@@ -594,6 +594,10 @@ if df is not None:
                 
         all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
         
+        # [추가] 소분류 목록에 '집단상가'를 강제로 추가
+        if "집단상가" not in all_so:
+            all_so.insert(0, "집단상가")
+            
         selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
         
     with c_owner:
@@ -611,8 +615,10 @@ if df is not None:
             owner_df = owner_df[mask_owner]
             
         if selected_so:
-            mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
-            owner_df = owner_df[mask]
+                mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
+                if "집단상가" in selected_so and '대분류' in temp_df.columns:
+                    mask |= temp_df['대분류'].astype(str).str.contains("집단상가", na=False)
+                temp_df = temp_df[mask]
             
         # 빈칸(NaN)을 걸러내고 문자로 변환하여 안전하게 정렬합니다.
         safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
@@ -650,8 +656,10 @@ if df is not None:
                 temp_df = temp_df[mask_temp]
                 
             if selected_so:
-                mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
-                temp_df = temp_df[mask]
+            mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
+            if "집단상가" in selected_so and '대분류' in owner_df.columns:
+                mask |= owner_df['대분류'].astype(str).str.contains("집단상가", na=False)
+            owner_df = owner_df[mask]
                 
             if unmapped_only:
                 if '사업장주소' in temp_df.columns:
