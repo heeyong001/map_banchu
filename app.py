@@ -615,10 +615,8 @@ if df is not None:
             owner_df = owner_df[mask_owner]
             
         if selected_so:
-                mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
-                if "집단상가" in selected_so and '대분류' in temp_df.columns:
-                    mask |= temp_df['대분류'].astype(str).str.contains("집단상가", na=False)
-                temp_df = temp_df[mask]
+            mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
+            owner_df = owner_df[mask]
             
         # 빈칸(NaN)을 걸러내고 문자로 변환하여 안전하게 정렬합니다.
         safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
@@ -656,10 +654,10 @@ if df is not None:
                 temp_df = temp_df[mask_temp]
                 
             if selected_so:
-            mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
-            if "집단상가" in selected_so and '대분류' in owner_df.columns:
-                mask |= owner_df['대분류'].astype(str).str.contains("집단상가", na=False)
-            owner_df = owner_df[mask]
+                mask = temp_df['소분류_캐시'].isin(selected_so) | temp_df['소분류_유추불가']
+                if "집단상가" in selected_so and '대분류' in temp_df.columns:
+                    mask |= temp_df['대분류'].astype(str).str.contains("집단상가", na=False)
+                temp_df = temp_df[mask]
                 
             if unmapped_only:
                 if '사업장주소' in temp_df.columns:
