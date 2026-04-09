@@ -614,7 +614,10 @@ if df is not None:
             mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
             owner_df = owner_df[mask]
             
-        all_owners = sorted(owner_df[real_boyu].unique().tolist())
+        # 빈칸(NaN)을 걸러내고 문자로 변환하여 안전하게 정렬합니다.
+        safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
+        all_owners = sorted(safe_owners)
+        
         selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
     with st.expander("🛠️ 고급 검색 옵션 (미매칭 보유처 확인)"):
