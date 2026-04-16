@@ -363,10 +363,21 @@ st.markdown("""
         border-color: #D4AF37 !important;
     }
 
-    /* 조회하기 버튼 전용 세로 크기 조절 */
-    div.search-btn-wrap div.stButton > button {
-        min-height: 2em !important;
-        padding: 10px 10px !important;
+    /* 🚀 [수정] 조회하기 버튼 전용 세로 크기 조절 (이정표 기법) */
+    
+    /* 1. 이정표 영역 자체는 화면에서 완전히 숨김 (빈 공간 방지) */
+    div[data-testid="stElementContainer"]:has(.search-btn-marker),
+    div.element-container:has(.search-btn-marker) {
+        display: none !important; 
+    }
+
+    /* 2. 이정표(marker)의 '바로 다음 컨테이너'에 들어있는 버튼 타겟팅 */
+    div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button,
+    div.element-container:has(.search-btn-marker) + div button {
+        height: 60px !important;         /* 👈 여기서 세로 길이를 조절하세요 (예: 60px, 80px) */
+        min-height: 60px !important;
+        font-size: 18px !important;      /* 👈 글자 크기도 시원하게 키울 수 있습니다 */
+        padding: 5px 15px !important;
     }
             
     </style>
@@ -1134,7 +1145,8 @@ with main_container.container():
                 
                 selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
-            st.markdown('<div class="search-btn-wrap">', unsafe_allow_html=True)
+            st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
+            
             if st.button("🚀 조회하기", use_container_width=True):
                 is_specific_owner = bool(selected_owners)
                 
@@ -1174,7 +1186,6 @@ with main_container.container():
                     st.session_state['selected_idx'] = None
                     st.session_state['clicked_store_name'] = None
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
 
             # 4. 결과 출력
