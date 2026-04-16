@@ -138,7 +138,16 @@ st.markdown("""
         background-color: #0A1712 !important; 
         border-right: 1px solid #3A5A4A !important;
     }
-
+        
+    /* 🚀 [추가] 사이드바 구분선(---)과 아래 메뉴(라디오 버튼) 사이의 간격 넓히기 */
+    section[data-testid="stSidebar"] hr {
+        margin-bottom: 35px !important; /* 👈 이 숫자를 늘리면 아래쪽 간격이 더 넓어집니다! (기본값은 약 16px) */
+    }
+    
+    /* 혹시 라디오 버튼 위쪽 여백을 더 밀고 싶다면 아래 코드도 적용됩니다 */
+    section[data-testid="stSidebar"] div[data-testid="stRadio"] {
+        margin-top: 10px !important;
+    }
     /* 4. 파일 업로더 (하얀 박스 완벽 철거) */
     [data-testid="stFileUploader"] div,
     [data-testid="stFileUploader"] section {
@@ -1184,8 +1193,16 @@ with main_container.container():
                         clicked_name = st.session_state['clicked_store_name']
                         
                         if not map_df.empty:
+                            # 🚀 [추가] 파이썬이 NaN을 무시해서 마커가 증발하는 현상 방어
+                            map_df = map_df.copy()
+                            fallback_col = next((c for c in map_df.columns if '보유처' in c and c != real_boyu), None)
+                            if fallback_col:
+                                map_df[real_boyu] = map_df[real_boyu].fillna("⚠️ " + map_df[fallback_col].astype(str) + " (미매칭)")
+                            else:
+                                map_df[real_boyu] = map_df[real_boyu].fillna("⚠️ 미등록 보유처")
+
                             min_lat = float(map_df['cached_lat'].min())
-                            max_lat = float(map_df['cached_lat'].max())
+                            max_lat = float(map_df['cached_lat'].max())                   
                             min_lon = float(map_df['cached_lon'].min())
                             max_lon = float(map_df['cached_lon'].max())
 
