@@ -505,8 +505,23 @@ with main_container.container():
         # 탭 1: 계정 관리
         # ---------------------------------------------------------
         with tab1:
-            col_new, col_edit = st.columns(2)
             users_df = load_sheet("users", ttl=0)
+            
+            # 🚀 [추가] 현재 등록된 계정 목록을 상단에 깔끔하게 표로 출력
+            st.markdown("#### 📋 현재 등록된 계정 목록")
+            if not users_df.empty and 'username' in users_df.columns:
+                # 비밀번호는 숨기고 아이디와 권한만 복사해서 표시
+                display_df = users_df[['username', 'role']].copy()
+                display_df.columns = ['👤 아이디', '🔑 권한 (admin/user)']
+                
+                # 표 형태로 출력 (가로 꽉 차게, 인덱스 번호는 숨김)
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("등록된 계정이 없습니다.")
+                
+            st.markdown("---") # 👈 목록과 수정 폼 사이에 구분선 추가
+            
+            col_new, col_edit = st.columns(2)
             
             with col_new:
                 st.markdown("#### ➕ 신규 계정 생성")
