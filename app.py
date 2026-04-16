@@ -507,20 +507,7 @@ with main_container.container():
         with tab1:
             users_df = load_sheet("users", ttl=0)
             
-            # 🚀 [추가] 현재 등록된 계정 목록을 상단에 깔끔하게 표로 출력
-            st.markdown("#### 📋 현재 등록된 계정 목록")
-            if not users_df.empty and 'username' in users_df.columns:
-                # 비밀번호는 숨기고 아이디와 권한만 복사해서 표시
-                display_df = users_df[['username', 'role']].copy()
-                display_df.columns = ['👤 아이디', '🔑 권한 (admin/user)']
-                
-                # 표 형태로 출력 (가로 꽉 차게, 인덱스 번호는 숨김)
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("등록된 계정이 없습니다.")
-                
-            st.markdown("---") # 👈 목록과 수정 폼 사이에 구분선 추가
-            
+            # 1. 상단: 계정 생성 및 수정/삭제 폼
             col_new, col_edit = st.columns(2)
             
             with col_new:
@@ -573,6 +560,17 @@ with main_container.container():
                             add_audit_log(st.session_state['username'], "계정 삭제", f"'{target_user}' 계정 삭제됨")
                             st.success(f"✅ '{target_user}' 계정이 삭제되었습니다.")
                             st.rerun()
+
+            st.markdown("---") # 👈 구분선
+
+            # 2. 하단: 현재 등록된 계정 목록 표시
+            st.markdown("#### 📋 현재 등록된 계정 목록")
+            if not users_df.empty and 'username' in users_df.columns:
+                display_df = users_df[['username', 'role']].copy()
+                display_df.columns = ['👤 아이디', '🔑 권한 (admin/user)']
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("등록된 계정이 없습니다.")
 
         # ---------------------------------------------------------
         # 탭 2: 보유처 관리
