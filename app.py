@@ -1226,7 +1226,7 @@ with main_container.container():
                             m.fit_bounds(
                                 [[min_lat, min_lon], [max_lat, max_lon]],
                                 max_zoom=13,
-                                padding=(60, 60)   # ← 티커가 지도 가장자리에 딱 붙지 않도록 여백 추가
+                                padding=(50, 50)   # ← 티커가 지도 가장자리에 딱 붙지 않도록 여백 추가
                             )
                             
                             # 2. 브이월드 한국형 상세지도 추가 (우측 상단에서 켜고 끄기)
