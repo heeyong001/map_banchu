@@ -366,7 +366,7 @@ st.markdown("""
     /* 조회하기 버튼 전용 세로 크기 조절 */
     div.search-btn-wrap div.stButton > button {
         min-height: 2em !important;
-        padding: 20px 15px !important;
+        padding: 10px 10px !important;
     }
             
     </style>
