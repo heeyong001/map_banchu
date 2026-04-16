@@ -148,7 +148,6 @@ st.markdown("""
     section[data-testid="stSidebar"] div[data-testid="stRadio"] {
         margin-top: 10px !important;
     }
-
     /* 4. 파일 업로더 (하얀 박스 완벽 철거) */
     [data-testid="stFileUploader"] div,
     [data-testid="stFileUploader"] section {
@@ -362,6 +361,12 @@ st.markdown("""
         background-color: #000000 !important;
         color: #D4AF37 !important;
         border-color: #D4AF37 !important;
+    }
+
+    /* 조회하기 버튼 전용 세로 크기 조절 */
+    div.search-btn-wrap div.stButton > button {
+        min-height: 3.5em !important;
+        padding: 20px 15px !important;
     }
             
     </style>
@@ -1129,6 +1134,7 @@ with main_container.container():
                 
                 selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
+            st.markdown('<div class="search-btn-wrap">', unsafe_allow_html=True)
             if st.button("🚀 조회하기", use_container_width=True):
                 is_specific_owner = bool(selected_owners)
                 
@@ -1168,6 +1174,7 @@ with main_container.container():
                     st.session_state['selected_idx'] = None
                     st.session_state['clicked_store_name'] = None
                     st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 
             # 4. 결과 출력
@@ -1202,32 +1209,17 @@ with main_container.container():
                             else:
                                 map_df[real_boyu] = map_df[real_boyu].fillna("⚠️ 미등록 보유처")
 
-                            # ===== 수정 후 =====
-                            # NaN 제거 후 유효한 좌표만으로 min/max 계산
-                            valid_coords = map_df[
-                                map_df['cached_lat'].notna() & map_df['cached_lon'].notna()
-                            ][['cached_lat', 'cached_lon']].drop_duplicates()
-
-                            if not valid_coords.empty:
-                                min_lat = float(valid_coords['cached_lat'].min())
-                                max_lat = float(valid_coords['cached_lat'].max())
-                                min_lon = float(valid_coords['cached_lon'].min())
-                                max_lon = float(valid_coords['cached_lon'].max())
-                            else:
-                                # 유효 좌표가 하나도 없는 극단적 상황 → 서울 기본값
-                                min_lat, max_lat = 37.4, 37.7
-                                min_lon, max_lon = 126.7, 127.2
+                            min_lat = float(map_df['cached_lat'].min())
+                            max_lat = float(map_df['cached_lat'].max())                   
+                            min_lon = float(map_df['cached_lon'].min())
+                            max_lon = float(map_df['cached_lon'].max())
 
                             c_lat = (min_lat + max_lat) / 2.0
                             c_lon = (min_lon + max_lon) / 2.0
-
-                            # 1. 안전한 기본 지도 생성 (padding으로 티커가 경계에 붙지 않게 여백 확보)
+                            
+                            # 1. 안전한 기본 지도 생성
                             m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
-                            m.fit_bounds(
-                                [[min_lat, min_lon], [max_lat, max_lon]],
-                                max_zoom=13,
-                                padding=(50, 50)   # ← 티커가 지도 가장자리에 딱 붙지 않도록 여백 추가
-                            )
+                            m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                             
                             # 2. 브이월드 한국형 상세지도 추가 (우측 상단에서 켜고 끄기)
                             folium.TileLayer(
