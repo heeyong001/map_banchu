@@ -1394,10 +1394,22 @@ with main_container.container():
 
                         with st.container(height=500):
                             for idx, row in list_df.head(100).iterrows():
-                                nm = str(row[real_boyu])
+                                
+                                # 🚀 [수정] 'nan' 표시 방지 및 미매칭 시 원본 이름 출력
+                                raw_nm = row[real_boyu]
+                                if pd.isna(raw_nm) or str(raw_nm).lower() == 'nan':
+                                    # DB에 없어서 nan이 뜨면, 엑셀에 있던 다른 '보유처' 컬럼값을 찾아서 보여줌
+                                    fallback_col = next((c for c in list_df.columns if '보유처' in c and c != real_boyu), None)
+                                    if fallback_col and pd.notna(row[fallback_col]):
+                                        nm = f"⚠️ {str(row[fallback_col])} (미매칭)"
+                                    else:
+                                        nm = "⚠️ 미등록 보유처"
+                                else:
+                                    nm = str(raw_nm)
+                                
                                 r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
                                 r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
-                                r_typ = row[real_type] if real_type and pd.notna(row[real_type]) else '-' # 👈 [추가] 모델유형 추출
+                                r_typ = row[real_type] if real_type and pd.notna(row[real_type]) else '-' 
                                 r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
                                 
                                 if "반추" in nm:
