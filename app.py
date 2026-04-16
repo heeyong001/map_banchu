@@ -375,7 +375,7 @@ st.markdown("""
     div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button,
     div.element-container:has(.search-btn-marker) + div button {
         height: 20px !important;         /* 👈 여기서 세로 길이를 조절하세요 (예: 60px, 80px) */
-        min-height: 60px !important;
+        min-height: 40px !important;
         font-size: 18px !important;      /* 👈 글자 크기도 시원하게 키울 수 있습니다 */
         padding: 5px 15px !important;
     }
