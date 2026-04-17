@@ -15,7 +15,7 @@ import time
 import json 
 import base64
 from io import BytesIO # [추가] 엑셀 다운로드를 위한 메모리 버퍼
-from datetime import datetime, time, timedelta # [추가] 로그 시간 기록용
+from datetime import datetime, timedelta # [추가] 로그 시간 기록용
 from streamlit_gsheets import GSheetsConnection  # [추가] 구글 시트 연결 라이브러리
 from streamlit_cookies_controller import CookieController
 
@@ -499,15 +499,16 @@ if not st.session_state['logged_in']:
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
                         
-                        # 🚀 [수정] 다음날 자정(00:00)까지 남은 시간 계산
+                        # 🚀 [수정] time 라이브러리 충돌 없이 다음날 자정(00:00)까지 남은 시간 계산
                         now = datetime.now()
-                        next_midnight = datetime.combine(now.date() + timedelta(days=1), time())
+                        # 현재 시간에서 하루를 더하고, 시/분/초를 0으로 깎아서 내일 자정 생성
+                        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
 
                         # 브라우저 쿠키에 해시 토큰 굽기 (유지 시간을 다음날 00시까지로 설정)
                         cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight) 
                         
-                        # 🚀 [핵심 추가] 브라우저가 쿠키를 안전하게 저장할 수 있도록 0.5초 대기!
+                        # 🚀 이제 에러 없이 0.5초 대기 후 정상 작동합니다!
                         time.sleep(0.5) 
                         st.rerun()
                     else:
