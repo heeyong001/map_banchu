@@ -465,6 +465,21 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 if not st.session_state['logged_in']:
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
+        # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 💡 주의: 깃허브에 올라간 실제 파일명(대소문자)과 정확히 똑같이 적어야 합니다!
+        # 만약 깃허브에 'Logo.png' 라고 올라가 있다면 아래 "logo.png"를 "Logo.png"로 변경하세요.
+        logo_path = os.path.join(current_dir, "logo.png")
+        
+        try:
+            with open(logo_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+            st.markdown(f'<div class="logo-container"><img src="data:image/png;base64,{encoded_string}"></div>', unsafe_allow_html=True)
+        except FileNotFoundError:
+            # 에러 발생 시, 서버가 어디서 파일을 찾고 있었는지 경로를 화면에 출력해서 원인 파악을 돕습니다.
+            st.markdown(f'<div class="logo-container"><span style="color:red; font-size:11px;">이미지를 찾을 수 없습니다.<br>검색 경로: {logo_path}</span></div>', unsafe_allow_html=True)
+        
         # ... (로고 및 타이틀 표시 로직 기존과 동일하게 유지) ...
         st.markdown('<div class="title-text">반추 재고 통합시스템</div>', unsafe_allow_html=True)
         
@@ -482,8 +497,12 @@ if not st.session_state['logged_in']:
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
-                        # 🚀 [보안 개선] 브라우저 쿠키에 해시 토큰 굽기 (창 닫아도 유지됨)
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=86400*30) # 30일 유지
+                        
+                        # 브라우저 쿠키에 해시 토큰 굽기
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=86400*30) 
+                        
+                        # 🚀 [핵심 추가] 브라우저가 쿠키를 안전하게 저장할 수 있도록 0.5초 대기!
+                        time.sleep(0.5) 
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
@@ -495,11 +514,11 @@ with st.sidebar:
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
         st.query_params.clear()
-        st.components.v1.html("""
-            <script>
-            localStorage.removeItem('auth_token');
-            </script>
-        """, height=0)
+        
+        # 🚀 [핵심 수정] 기존 HTML 방식 대신 공식 컨트롤러로 쿠키 삭제 후 0.5초 대기
+        cookie_controller.remove('auth_token')
+        time.sleep(0.5) 
+        
         st.rerun()
     st.markdown("---")
 
@@ -739,11 +758,12 @@ with main_container.container():
         # ---------------------------------------------------------
         with tab3:
             st.markdown("#### ⚠️ 미매칭 보유처 확인")
-            st.caption("현재 엑셀 데이터 중 주소록(DB)과 매칭되지 않아 지도에 위치표시가 정확하지 않은 목록입니다.")
+            st.caption("현재 엑셀 데이터 중 주소록(DB)과 매칭되지 않는 목록을 상세 사유와 함께 표시합니다.")
 
             DATA_FILE = 'inventory_data.xlsx'
             if os.path.exists(DATA_FILE):
                 try:
+                    # 1. 데이터 로드 및 전처리
                     raw_df = pd.read_excel(DATA_FILE, dtype=str)
                     raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
                     db_df = load_sheet("stores", ttl=0)
@@ -752,16 +772,28 @@ with main_container.container():
                     code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
                     
                     if boyu_col and code_col:
-                        # 🚀 [수정] 보유처명(boyu_col)이 아니라 접점코드(code_col) 기준으로 중복 제거하여 데이터 유실 방지
-                        raw_unique = raw_df[~raw_df[boyu_col].astype(str).str.contains("반추", na=False)].drop_duplicates(subset=[code_col]).copy()
-                        db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip() # DB쪽 공백 사전 완벽 제거
+                        # 🚀 [요청 반영 1] "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
+                        raw_filtered = raw_df[
+                            (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
+                            (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
+                        ].copy()
+
+                        # 중복 제거 (이름과 코드 조합 기준)
+                        raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col, code_col]).copy()
+                        db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip() 
                         
                         def get_unmatch_reason(row):
                             code = str(row[code_col]).strip()
+                            
+                            # 🚀 [요청 반영 2] 미매칭 사유 구분 (n/a 누락 vs DB 미등록)
+                            if not code or code.lower() in ['nan', 'none', 'n/a', '']:
+                                return "❌ 엑셀 재고표에 접점번호가 누락되었습니다 (n/a)."
+                                
                             match = db_df[db_df['접점코드'] == code]
+                            if match.empty: 
+                                return "❌ 주소록 DB에 등록되지 않은 접점코드입니다."
                             
-                            if match.empty: return "❌ 주소록 DB에 등록되지 않은 접점코드입니다."
-                            
+                            # 추가 체크: 주소나 좌표가 없는 경우
                             m_row = match.iloc[0]
                             addr = str(m_row.get('사업장주소', '')).strip()
                             x_val = str(m_row.get('x좌표', '')).strip().lower()
@@ -770,6 +802,7 @@ with main_container.container():
                             if not x_val or x_val == 'nan' or x_val == 'none': return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
                             return None 
 
+                        # 사유 분석 적용
                         raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
                         unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
 
@@ -777,11 +810,14 @@ with main_container.container():
                             st.warning(f"총 **{len(unmapped_display)}**건의 미매칭 데이터가 발견되었습니다.")
                             final_cols = [boyu_col, '미매칭 사유']
                             if '대분류' in unmapped_display.columns: final_cols.append('대분류')
+                            
+                            # 결과 테이블 출력
                             st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
                         else: 
                             st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
                     else: st.error("엑셀 파일에서 '보유처' 또는 '접점코드' 컬럼을 식별할 수 없습니다.")
                 except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
+            else: st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
 
         # ---------------------------------------------------------
         # 탭 4: 시스템 변경 이력 (Audit Log)
