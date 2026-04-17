@@ -1059,7 +1059,7 @@ with main_container.container():
             col_map = {}
             for col in df.columns:
                 c = str(col).replace('▼', '').strip()
-                if '보유처' in c: col_map['보유처'] = col
+                if '보유처' in c and '보유처' not in col_map: col_map['보유처'] = col
                 elif '모델명' in c: col_map['모델명'] = col
                 elif '색상' in c: col_map['색상'] = col
                 elif any(k in c for k in ['재고', '상태', '등급']): col_map['status'] = col
