@@ -410,15 +410,28 @@ if 'logged_in' not in st.session_state:
     st.session_state['username'] = ""
     st.session_state['role'] = ""
 
-# 2. 새로고침 시 URL 토큰 복구 로직
+# 2. 새로고침/재접속 시 localStorage 토큰 복구 로직
 if not st.session_state['logged_in']:
+    # localStorage에서 토큰 읽어오기 (URL 파라미터로 전달)
+    st.components.v1.html("""
+        <script>
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+            const url = new URL(window.parent.location.href);
+            if (!url.searchParams.get('auth_token')) {
+                url.searchParams.set('auth_token', token);
+                window.parent.history.replaceState({}, '', url.toString());
+                window.parent.location.reload();
+            }
+        }
+        </script>
+    """, height=0)
     auth_token = st.query_params.get("auth_token")
     if auth_token:
         try:
             users_df = load_sheet("users", ttl="10m")
             if not users_df.empty:
-                # 각 사용자의 오늘 날짜 기반 토큰과 비교
-                matched_user = users_df[users_df['password'].apply(make_session_token) == auth_token]
+                matched_user = users_df[users_df['password'] == auth_token]
                 if not matched_user.empty:
                     user_data = matched_user.iloc[0]
                     st.session_state['logged_in'] = True
@@ -467,8 +480,14 @@ if not st.session_state['logged_in']:
                             st.session_state['logged_in'] = True
                             st.session_state['username'] = username
                             st.session_state['role'] = user_match.iloc[0]['role']
-                            # [보안 개선] 비밀번호 해시 대신 날짜 기반 토큰을 URL에 저장
-                            st.query_params["auth_token"] = make_session_token(user_match.iloc[0]['password'])
+                            # [보안 개선] 비밀번호 해시 대신 날짜 기반 토큰을 URL + localStorage에 저장
+                            _token = make_session_token(user_match.iloc[0]['password'])
+                            st.query_params["auth_token"] = _token
+                            st.components.v1.html(f"""
+                                <script>
+                                localStorage.setItem('auth_token', '{_token}');
+                                </script>
+                            """, height=0)
                             st.rerun()
                         else:
                             st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
@@ -484,8 +503,12 @@ with st.sidebar:
     st.success(f"👤 **{st.session_state['username']}**님 접속중")
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
-        # [추가] 로그아웃 시 URL 파라미터 깔끔하게 삭제
         st.query_params.clear()
+        st.components.v1.html("""
+            <script>
+            localStorage.removeItem('auth_token');
+            </script>
+        """, height=0)
         st.rerun()
     st.markdown("---")
 
@@ -732,7 +755,8 @@ with main_container.container():
             if os.path.exists(DATA_FILE):
                 try:
                     raw_df = pd.read_excel(DATA_FILE, dtype=str)
-                    db_df = load_sheet("stores", ttl="5m")
+                    raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
+                    db_df = load_sheet("stores", ttl=0)
                     
                     boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
                     code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
@@ -1177,29 +1201,31 @@ with main_container.container():
                 selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
                 
             with c_owner:
-                # 현재 조건 키 생성 (조건이 바뀔 때만 재계산)
-                owner_filter_key = str(sorted(selected_models)) + str(sorted(selected_colors if selected_colors else [])) + str(sorted(selected_dae)) + str(sorted(selected_so))
-                
-                if st.session_state.get('owner_filter_key') != owner_filter_key:
-                    owner_df = df.copy()
+                _key = (
+                    tuple(sorted(selected_models)),
+                    tuple(sorted(selected_colors if selected_colors else [])),
+                    tuple(sorted(selected_dae)),
+                    tuple(sorted(selected_so))
+                )
+                if st.session_state.get('_owner_cache_key') != _key:
+                    _odf = df.copy()
                     if selected_models:
-                        owner_df = owner_df[owner_df[real_model].isin(selected_models)]
+                        _odf = _odf[_odf[real_model].isin(selected_models)]
                     if real_color and selected_colors:
-                        owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
+                        _odf = _odf[_odf[real_color].isin(selected_colors)]
                     if selected_dae:
-                        actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                        mask_owner = owner_df['대분류_캐시'].isin(actual_dae)
+                        _adae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+                        _mask = _odf['대분류_캐시'].isin(_adae)
                         if "사무실(반추정보통신)" in selected_dae:
-                            mask_owner |= owner_df[real_boyu].astype(str).str.contains("반추", na=False)
-                        owner_df = owner_df[mask_owner]
+                            _mask |= _odf[real_boyu].astype(str).str.contains("반추", na=False)
+                        _odf = _odf[_mask]
                     if selected_so:
-                        mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
-                        owner_df = owner_df[mask]
-                    safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
-                    st.session_state['owner_filter_key'] = owner_filter_key
-                    st.session_state['owner_list_cache'] = sorted(safe_owners)
-
-                all_owners = st.session_state.get('owner_list_cache', [])
+                        _odf = _odf[_odf['소분류_캐시'].isin(selected_so) | _odf['소분류_유추불가']]
+                    st.session_state['_owner_cache_key'] = _key
+                    st.session_state['_owner_cache_list'] = sorted(
+                        [str(x) for x in _odf[real_boyu].unique() if pd.notna(x)]
+                    )
+                all_owners = st.session_state.get('_owner_cache_list', [])
                 selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
