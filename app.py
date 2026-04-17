@@ -15,7 +15,7 @@ import time
 import json 
 import base64
 from io import BytesIO # [추가] 엑셀 다운로드를 위한 메모리 버퍼
-from datetime import datetime # [추가] 로그 시간 기록용
+from datetime import datetime, time, timedelta # [추가] 로그 시간 기록용
 from streamlit_gsheets import GSheetsConnection  # [추가] 구글 시트 연결 라이브러리
 from streamlit_cookies_controller import CookieController
 
@@ -482,6 +482,7 @@ if not st.session_state['logged_in']:
         
         # ... (로고 및 타이틀 표시 로직 기존과 동일하게 유지) ...
         st.markdown('<div class="title-text">반추 재고 통합시스템</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle-text">관리자 및 허가된 사원만 접근 가능합니다.</div>', unsafe_allow_html=True)
         
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("👤 아이디")
@@ -498,8 +499,13 @@ if not st.session_state['logged_in']:
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
                         
-                        # 브라우저 쿠키에 해시 토큰 굽기
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=86400*30) 
+                        # 🚀 [수정] 다음날 자정(00:00)까지 남은 시간 계산
+                        now = datetime.now()
+                        next_midnight = datetime.combine(now.date() + timedelta(days=1), time())
+                        seconds_until_midnight = int((next_midnight - now).total_seconds())
+
+                        # 브라우저 쿠키에 해시 토큰 굽기 (유지 시간을 다음날 00시까지로 설정)
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight) 
                         
                         # 🚀 [핵심 추가] 브라우저가 쿠키를 안전하게 저장할 수 있도록 0.5초 대기!
                         time.sleep(0.5) 
