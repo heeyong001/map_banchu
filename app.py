@@ -394,6 +394,13 @@ def check_hashes(password, hashed_text):
         return True
     return False
 
+# [보안 개선] 날짜 기반 세션 토큰 생성 함수
+# 비밀번호 해시 + 오늘 날짜를 섞어 매일 자동 만료되는 토큰 생성
+def make_session_token(password_hash):
+    from datetime import date
+    today = str(date.today())
+    return hashlib.sha256((password_hash + today).encode()).hexdigest()
+
 # ==============================================================================
 # [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (URL 보안 토큰 방식 적용)
 # ==============================================================================
@@ -410,13 +417,13 @@ if not st.session_state['logged_in']:
         try:
             users_df = load_sheet("users", ttl="10m")
             if not users_df.empty:
-                matched_user = users_df[users_df['password'] == auth_token]
+                # 각 사용자의 오늘 날짜 기반 토큰과 비교
+                matched_user = users_df[users_df['password'].apply(make_session_token) == auth_token]
                 if not matched_user.empty:
                     user_data = matched_user.iloc[0]
                     st.session_state['logged_in'] = True
                     st.session_state['username'] = user_data['username']
-                    # 'role'을 쓰셨다면 'user_role'로 통일하거나 맞춰서 사용하세요
-                    st.session_state['role'] = user_data['role'] 
+                    st.session_state['role'] = user_data['role']
                     st.rerun()
         except:
             pass
@@ -460,8 +467,8 @@ if not st.session_state['logged_in']:
                             st.session_state['logged_in'] = True
                             st.session_state['username'] = username
                             st.session_state['role'] = user_match.iloc[0]['role']
-                            # 🚀 [추가됨] 로그인 성공 시 URL에 토큰 기록
-                            st.query_params["auth_token"] = user_match.iloc[0]['password']
+                            # [보안 개선] 비밀번호 해시 대신 날짜 기반 토큰을 URL에 저장
+                            st.query_params["auth_token"] = make_session_token(user_match.iloc[0]['password'])
                             st.rerun()
                         else:
                             st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
@@ -670,6 +677,41 @@ with main_container.container():
                                 save_sheet(updated_all, "stores")
                                 st.success(f"✅ 일괄 저장이 완료되었습니다. 위쪽의 [전체 최적화] 버튼을 한 번 눌러주세요!")
                                 st.rerun()
+
+            st.markdown("---")
+            with st.expander("➕ 보유처 단건 등록 (클릭하여 열기)"):
+                with st.form("single_store_form"):
+                    s1, s2 = st.columns(2)
+                    with s1:
+                        single_code = st.text_input("접점코드 *", placeholder="예: A001")
+                        single_name = st.text_input("보유처명 *", placeholder="예: 홍대 직영점")
+                    with s2:
+                        single_addr = st.text_input("사업장주소", placeholder="예: 서울특별시 마포구 ...")
+                        single_region = st.text_input("대권역구분", placeholder="예: 서북")
+                    single_so = st.text_input("상권구분(소분류)", placeholder="예: 홍대")
+                    
+                    if st.form_submit_button("➕ 등록하기", use_container_width=True):
+                        if single_code and single_name:
+                            new_store = pd.DataFrame([{
+                                "접점코드": single_code.strip(),
+                                "보유처명": single_name.strip(),
+                                "사업장주소": single_addr.strip(),
+                                "대권역구분": single_region.strip(),
+                                "상권구분": single_so.strip(),
+                                "x좌표": "",
+                                "y좌표": ""
+                            }])
+                            existing = all_data_df.copy()
+                            if not existing.empty and single_code.strip() in existing['접점코드'].astype(str).values:
+                                st.error(f"⚠️ 이미 존재하는 접점코드입니다: {single_code}")
+                            else:
+                                updated = pd.concat([existing, new_store], ignore_index=True)
+                                save_sheet(updated, "stores")
+                                add_audit_log(st.session_state['username'], "보유처 단건 등록", f"'{single_name}' ({single_code}) 등록")
+                                st.success(f"✅ '{single_name}' 등록 완료! 위쪽의 [좌표 일괄 생성] 버튼을 눌러 좌표를 채워주세요.")
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ 접점코드와 보유처명은 필수입니다.")
 
             st.markdown("---")
             edited_df = st.data_editor(all_data_df, num_rows="dynamic", use_container_width=True, height=400, key="bulk_editor_v3")
@@ -1017,7 +1059,7 @@ with main_container.container():
             col_map = {}
             for col in df.columns:
                 c = str(col).replace('▼', '').strip()
-                if '보유처' in c and '보유처' not in col_map: col_map['보유처'] = col
+                if '보유처' in c: col_map['보유처'] = col
                 elif '모델명' in c: col_map['모델명'] = col
                 elif '색상' in c: col_map['색상'] = col
                 elif any(k in c for k in ['재고', '상태', '등급']): col_map['status'] = col
@@ -1135,27 +1177,29 @@ with main_container.container():
                 selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
                 
             with c_owner:
-                owner_df = df.copy()
-                if selected_models:
-                    owner_df = owner_df[owner_df[real_model].isin(selected_models)]
-                if real_color and selected_colors:
-                    owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
-                    
-                if selected_dae:
-                    actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                    mask_owner = owner_df['대분류_캐시'].isin(actual_dae)
-                    if "사무실(반추정보통신)" in selected_dae:
-                        mask_owner |= owner_df[real_boyu].astype(str).str.contains("반추", na=False)
-                    owner_df = owner_df[mask_owner]
-                    
-                if selected_so:
-                    mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
-                    owner_df = owner_df[mask]
-                    
-                # 빈칸(NaN)을 걸러내고 문자로 변환하여 안전하게 정렬합니다.
-                safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
-                all_owners = sorted(safe_owners)
+                # 현재 조건 키 생성 (조건이 바뀔 때만 재계산)
+                owner_filter_key = str(sorted(selected_models)) + str(sorted(selected_colors if selected_colors else [])) + str(sorted(selected_dae)) + str(sorted(selected_so))
                 
+                if st.session_state.get('owner_filter_key') != owner_filter_key:
+                    owner_df = df.copy()
+                    if selected_models:
+                        owner_df = owner_df[owner_df[real_model].isin(selected_models)]
+                    if real_color and selected_colors:
+                        owner_df = owner_df[owner_df[real_color].isin(selected_colors)]
+                    if selected_dae:
+                        actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+                        mask_owner = owner_df['대분류_캐시'].isin(actual_dae)
+                        if "사무실(반추정보통신)" in selected_dae:
+                            mask_owner |= owner_df[real_boyu].astype(str).str.contains("반추", na=False)
+                        owner_df = owner_df[mask_owner]
+                    if selected_so:
+                        mask = owner_df['소분류_캐시'].isin(selected_so) | owner_df['소분류_유추불가']
+                        owner_df = owner_df[mask]
+                    safe_owners = [str(x) for x in owner_df[real_boyu].unique() if pd.notna(x)]
+                    st.session_state['owner_filter_key'] = owner_filter_key
+                    st.session_state['owner_list_cache'] = sorted(safe_owners)
+
+                all_owners = st.session_state.get('owner_list_cache', [])
                 selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
@@ -1245,16 +1289,15 @@ with main_container.container():
                             m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
                             m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                             
-                            # 2. 브이월드 한국형 상세지도 추가 (우측 상단에서 켜고 끄기)
-                            folium.TileLayer(
-                                tiles='https://api.vworld.kr/req/wmts/1.0.0/70935515-5599-317A-B90F-23A25A93D063/Base/{z}/{y}/{x}.png',
-                                attr='VWorld',
-                                name='브이월드 (한국형 상세지도)',
-                                overlay=False,
-                                control=True
-                            ).add_to(m)
-                            
-                            folium.LayerControl(position='topright').add_to(m)
+                            # (레이어 선택 박스 숨김 처리 - 추후 기능 구현 시 아래 주석 해제)
+                            # folium.TileLayer(
+                            #     tiles='https://api.vworld.kr/req/wmts/1.0.0/70935515-5599-317A-B90F-23A25A93D063/Base/{z}/{y}/{x}.png',
+                            #     attr='VWorld',
+                            #     name='브이월드 (한국형 상세지도)',
+                            #     overlay=False,
+                            #     control=True
+                            # ).add_to(m)
+                            # folium.LayerControl(position='topright').add_to(m)
 
                             if gesture_handling_available:
                                 try: GestureHandling().add_to(m)
