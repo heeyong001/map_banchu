@@ -95,13 +95,6 @@ def get_lat_lon(address, existing_x=None, existing_y=None):
     except Exception as e:  # 👈 [핵심] 이 부분을 명확하게 변경하여 에러 원천 차단
         return None, None
         
-# [기능 추가] 모바일 제스처 처리를 위한 플러그인 확인
-try:
-    from folium.plugins import GestureHandling
-    gesture_handling_available = True
-except ImportError:
-    gesture_handling_available = False
-
 # 1. 화면 설정
 st.set_page_config(layout="wide", page_title="재고 현황 대시보드", initial_sidebar_state="collapsed")
 
@@ -1262,8 +1255,13 @@ with main_container.container():
                 is_specific_owner = bool(selected_owners)
                 if not selected_models and not is_specific_owner:
                     st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
+                    
+                    # 🚀 [핵심 추가] 검색 조건이 초기화/부족할 때, 이전 검색 결과(지도 및 리스트)를 화면에서 완전히 지워버림!
+                    st.session_state['filtered_data'] = None 
+                    
                 else:
                     st.session_state['search_clicked'] = True
+                    # ... 이하 검색 로직 ...
                     
                     # 🚀 [핵심 캐싱 적용] 튜플 형태로 넘겨서 동일한 조합은 즉시 로딩되도록 함
                     list_res, map_res = get_cached_search_results(
@@ -1322,22 +1320,52 @@ with main_container.container():
                             c_lon = (min_lon + max_lon) / 2.0
                             
                             # 1. 안전한 기본 지도 생성
-                            m = folium.Map(location=[c_lat, c_lon], zoom_start=10)
+                            m = folium.Map(location=[c_lat, c_lon], zoom_start=10, attributionControl=False)
                             m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
                             
-                            # (레이어 선택 박스 숨김 처리 - 추후 기능 구현 시 아래 주석 해제)
-                            # folium.TileLayer(
-                            #     tiles='https://api.vworld.kr/req/wmts/1.0.0/70935515-5599-317A-B90F-23A25A93D063/Base/{z}/{y}/{x}.png',
-                            #     attr='VWorld',
-                            #     name='브이월드 (한국형 상세지도)',
-                            #     overlay=False,
-                            #     control=True
-                            # ).add_to(m)
+                            folium.TileLayer(
+                                 tiles='https://api.vworld.kr/req/wmts/1.0.0/0580472E-D858-365E-968B-F1FCE560F381/Base/{z}/{y}/{x}.png',
+                                 attr='VWorld',
+                                 name='브이월드 (한국형 상세지도)',
+                                 overlay=True,
+                                 control=True
+                             ).add_to(m)
+                            
+                            # 우측 상단에 레이어 컨트롤러(설정창) 표시
                             # folium.LayerControl(position='topright').add_to(m)
 
-                            if gesture_handling_available:
-                                try: GestureHandling().add_to(m)
-                                except: pass
+                            # 🚀 [새로운 모바일 전용 제어 로직]
+                            # 데스크탑: 클릭 드래그(이동), 휠(확대/축소) - 원래대로 자유롭게 유지
+                            # 모바일: 한 손가락은 페이지 스크롤, '두 손가락'일 때만 지도 조작 가능
+                            
+                            map_id = m.get_name()
+                            mobile_js = f"""
+                            <script>
+                            var map_obj = {map_id};
+                            // 접속 기기가 모바일(터치 기기)인지 확인
+                            if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {{
+                                // 1. 모바일에서는 기본 드래그와 줌을 일단 비활성화 (페이지 스크롤 방해 방지)
+                                map_obj.dragging.disable();
+                                map_obj.touchZoom.disable();
+                                
+                                // 2. 손가락이 2개 이상(멀티터치)일 때만 기능을 켬
+                                map_obj.on('touchstart', function(e) {{
+                                    if (e.touches.length > 1) {{
+                                        map_obj.dragging.enable();
+                                        map_obj.touchZoom.enable();
+                                    }}
+                                }});
+                                
+                                // 3. 터치가 끝나면 다시 기능을 꺼서 실수로 지도가 움직이지 않게 방어
+                                map_obj.on('touchend', function(e) {{
+                                    map_obj.dragging.disable();
+                                    map_obj.touchZoom.disable();
+                                }});
+                            }}
+                            </script>
+                            """
+                            # 지도의 루트 HTML에 스크립트 주입
+                            m.get_root().html.add_child(Element(mobile_js))
                             
                             # [주의] 사내망 방화벽 충돌을 막기 위해 클러스터링(MarkerCluster)을 제거하고 원복했습니다.
                             groups = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
