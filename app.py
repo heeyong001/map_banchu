@@ -376,14 +376,18 @@ st.markdown("""
     /* 🚀 [업데이트] 우측 하단 Streamlit 기본 로고 및 워터마크 완벽 숨김 */
     footer { visibility: hidden !important; display: none !important; }
 
-    /* 1. 최신 버전의 뱃지 컨테이너 클래스 추적 삭제 */
-    .viewerBadge_container__1QSob,
-    .viewerBadge_link__1S137,
-    .viewerBadge_text__1JaDK { 
+    /* 🚀 [최종 업데이트] 우측 하단 Streamlit 로고 및 워터마크 완벽 숨김 (버전 무관) */
+    footer { 
+        visibility: hidden !important; 
         display: none !important; 
     }
 
-    /* 2. 스트림릿 홈페이지로 연결되는 우측 하단 플로팅 로고 링크 강제 차단 */
+    /* 클래스명 뒤의 랜덤 해시값이 서버에서 바뀌어도 무조건 잡아내서 숨김 (^= 사용) */
+    div[class^="viewerBadge"] { 
+        display: none !important; 
+    }
+
+    /* 스트림릿 홈페이지로 연결되는 우측 하단 플로팅 링크 강제 차단 */
     a[href^="https://streamlit.io"] { 
         display: none !important; 
     }
