@@ -373,10 +373,19 @@ st.markdown("""
         font-size: 18px !important;      /* 👈 글자 크기도 시원하게 키울 수 있습니다 */
         padding: 5px 15px !important;
     }
-    /* 우측 하단 Streamlit 기본 로고 및 워터마크 완벽 숨김 */
-    footer {
-        visibility: hidden !important;
-        display: none !important;
+    /* 🚀 [업데이트] 우측 하단 Streamlit 기본 로고 및 워터마크 완벽 숨김 */
+    footer { visibility: hidden !important; display: none !important; }
+
+    /* 1. 최신 버전의 뱃지 컨테이너 클래스 추적 삭제 */
+    .viewerBadge_container__1QSob,
+    .viewerBadge_link__1S137,
+    .viewerBadge_text__1JaDK { 
+        display: none !important; 
+    }
+
+    /* 2. 스트림릿 홈페이지로 연결되는 우측 하단 플로팅 로고 링크 강제 차단 */
+    a[href^="https://streamlit.io"] { 
+        display: none !important; 
     }
             
     </style>
