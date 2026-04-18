@@ -373,6 +373,11 @@ st.markdown("""
         font-size: 18px !important;      /* 👈 글자 크기도 시원하게 키울 수 있습니다 */
         padding: 5px 15px !important;
     }
+    /* 우측 하단 Streamlit 기본 로고 및 워터마크 완벽 숨김 */
+    footer {
+        visibility: hidden !important;
+        display: none !important;
+    }
             
     </style>
 """, unsafe_allow_html=True)
