@@ -1524,11 +1524,11 @@ with main_container.container():
                                 folium.Marker(
                                     location=[lat, lon],
                                     icon=folium.DivIcon(html=icon_html),
-                                    popup=folium.Popup(popup_html, max_width=400),
+                                    popup=folium.Popup(popup_html, max_width=400, max_height=250),
                                     z_index_offset=z
                                 ).add_to(m)
 
-                            st_folium(m, width="100%", height=450, returned_objects=[], key="safe_map_view")
+                            st_folium(m, width="100%", height=600, returned_objects=[], key="safe_map_view")
 
                         else:
                             st.info("지도 데이터 없음")
