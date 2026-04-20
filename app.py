@@ -676,45 +676,6 @@ with main_container.container():
                 st.download_button(label="📥 주소록 전체 다운로드 (Excel)", data=output.getvalue(), file_name=f"주소록_전체_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
             # ---------------------------------------------------------
-            # [핵심] 🚀 관리자 전용 누락 좌표 채우기 버튼 (API 호출)
-            # ---------------------------------------------------------
-            st.markdown("---")
-            st.markdown("##### 🚀 누락된 매장 좌표 일괄 생성 (API 호출)")
-            st.info("💡 대량 업로드 등으로 'x좌표/y좌표'가 빈칸인 매장이 있을 때만 눌러주세요. 빈칸인 매장만 쏙쏙 골라서 네이버 지도로 좌표를 채워줍니다.")
-            
-            if st.button("⚡ 빈칸 좌표만 골라서 일괄 생성 (클릭)", type="primary", use_container_width=True):
-                with st.spinner("좌표가 없는 매장을 찾아 API를 호출 중입니다..."):
-                    opt_df = all_data_df.copy()
-                    
-                    # 🚀 [에러 해결] 판다스의 엄격한 타입 체크 충돌을 막기 위해 컬럼을 유연한 타입(object)으로 강제 변환
-                    if 'x좌표' not in opt_df.columns: opt_df['x좌표'] = ""
-                    if 'y좌표' not in opt_df.columns: opt_df['y좌표'] = ""
-                    opt_df['x좌표'] = opt_df['x좌표'].astype(object)
-                    opt_df['y좌표'] = opt_df['y좌표'].astype(object)
-                    
-                    api_call_count = 0
-                    
-                    # 오직 '주소가 있는데 좌표가 비어있는 경우'에만 API 호출!
-                    for idx, row in opt_df.iterrows():
-                        addr = str(row.get('사업장주소', ''))
-                        if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
-                            n_lat, n_lon = get_lat_lon(addr)
-                            if n_lat:
-                                # 🚀 강제로 문자로 바꾸지 않고(str 제거), 네이버 API가 준 숫자(float) 그대로 안전하게 입력
-                                opt_df.at[idx, 'y좌표'] = n_lat
-                                opt_df.at[idx, 'x좌표'] = n_lon
-                                api_call_count += 1
-                    
-                    if api_call_count > 0:
-                        save_sheet(opt_df, "stores")
-                        add_audit_log(st.session_state['username'], "DB 좌표 보정", f"총 {api_call_count}건 누락 좌표 생성")
-                        st.success(f"🎉 완벽합니다! 좌표가 비어있던 {api_call_count}개 매장의 위경도를 성공적으로 채웠습니다.")
-                    else:
-                        st.info("👍 모든 매장의 좌표가 이미 꽉 채워져 있습니다! (API 호출 0건)")
-                    time.sleep(1.5)
-                    st.rerun()
-
-            # ---------------------------------------------------------
             # 대량 등록 및 개별 수정 폼 
             # ---------------------------------------------------------
             st.markdown("---")
@@ -822,7 +783,8 @@ with main_container.container():
                                 updated = pd.concat([existing, new_store], ignore_index=True)
                                 save_sheet(updated, "stores")
                                 add_audit_log(st.session_state['username'], "보유처 단건 등록", f"'{single_name}' ({single_code}) 등록")
-                                st.success(f"✅ '{single_name}' 등록 완료! 위쪽의 [좌표 일괄 생성] 버튼을 눌러 좌표를 채워주세요.")
+                                # 🚀 [수정] 이제 자동으로 좌표가 따지므로 문구 변경
+                                st.success(f"✅ '{single_name}' 등록 및 좌표 변환이 완료되었습니다!")
                                 st.rerun()
                         else:
                             st.warning("⚠️ 접점코드와 보유처명은 필수입니다.")
