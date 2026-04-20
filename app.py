@@ -337,7 +337,7 @@ st.markdown("""
     }
     div[data-testid="stDataEditor"], div[data-testid="stDataFrame"] { background-color: #182C24 !important; border: 1px solid #3A5A4A !important; 
     }
-            
+   
     /* 🚀 [추가] 다운로드 버튼 전용 블랙&골드 스타일 */
     [data-testid="stDownloadButton"] button {
         background-color: #000000 !important; /* 배경 검정 */
@@ -566,6 +566,16 @@ main_container = st.empty()
 
 with main_container.container():
     if app_mode == "⚙️ 관리자 설정":
+        # 🚀 [추가] 관리자 설정 모드일 때만 잔상 제거 CSS 작동
+        st.markdown("""
+            <style>
+            /* 관리자 페이지에서만 stale(잔상) 요소를 숨김 */
+            [data-stale="true"] {
+                display: none !important;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
         st.markdown("## ⚙️ 관리자 설정 대시보드")
         
         tab1, tab2, tab3, tab4 = st.tabs(["👥 계정 및 권한 관리", "🏢 보유처 주소록 DB 관리", "⚠️ 미매칭 보유처 확인", "🕒 시스템 변경 이력 (Log)"])
