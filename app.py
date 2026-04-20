@@ -758,7 +758,6 @@ with main_container.container():
                                     # 2. 접점코드가 겹치면, 맨 밑에 붙은 '새로 업로드한 데이터(last)'를 남기고 예전 데이터를 삭제! (완벽한 업데이트)
                                     updated_all = combined_df.drop_duplicates(subset=['접점코드'], keep='last')
                                 else: 
-                                    else: 
                                     updated_all = bulk_df
                                 
                                 # 🚀 [로직 개선] 구글 시트에 저장하기 직전, 누락된 좌표들만 골라서 자동 변환
