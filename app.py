@@ -1524,7 +1524,7 @@ with main_container.container():
                                 folium.Marker(
                                     location=[lat, lon],
                                     icon=folium.DivIcon(html=icon_html),
-                                    popup=folium.Popup(popup_html, max_width=400, max_height=100),
+                                    popup=folium.Popup(popup_html, max_width=400, max_height=70),
                                     z_index_offset=z
                                 ).add_to(m)
 
