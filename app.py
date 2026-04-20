@@ -758,8 +758,24 @@ with main_container.container():
                                     # 2. 접점코드가 겹치면, 맨 밑에 붙은 '새로 업로드한 데이터(last)'를 남기고 예전 데이터를 삭제! (완벽한 업데이트)
                                     updated_all = combined_df.drop_duplicates(subset=['접점코드'], keep='last')
                                 else: 
+                                    else: 
                                     updated_all = bulk_df
                                 
+                                # 🚀 [로직 개선] 구글 시트에 저장하기 직전, 누락된 좌표들만 골라서 자동 변환
+                                with st.spinner("엑셀 데이터 병합 완료! 누락된 주소의 좌표를 네이버 API로 가져오는 중입니다... (데이터가 많으면 10초 이상 소요될 수 있습니다)"):
+                                    if 'x좌표' not in updated_all.columns: updated_all['x좌표'] = ""
+                                    if 'y좌표' not in updated_all.columns: updated_all['y좌표'] = ""
+                                    updated_all['x좌표'] = updated_all['x좌표'].astype(object)
+                                    updated_all['y좌표'] = updated_all['y좌표'].astype(object)
+                                    
+                                    for idx, row in updated_all.iterrows():
+                                        addr = str(row.get('사업장주소', ''))
+                                        if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
+                                            n_lat, n_lon = get_lat_lon(addr)
+                                            if n_lat:
+                                                updated_all.at[idx, 'y좌표'] = n_lat
+                                                updated_all.at[idx, 'x좌표'] = n_lon
+
                                 save_sheet(updated_all, "stores")
                                 
                                 # 대량 등록도 로그에 남김
@@ -785,15 +801,21 @@ with main_container.container():
                     
                     if st.form_submit_button("➕ 등록하기", use_container_width=True):
                         if single_code and single_name:
-                            new_store = pd.DataFrame([{
-                                "접점코드": single_code.strip(),
-                                "보유처명": single_name.strip(),
-                                "사업장주소": single_addr.strip(),
-                                "대권역구분": single_region.strip(),
-                                "상권구분": single_so.strip(),
-                                "x좌표": "",
-                                "y좌표": ""
-                            }])
+                            # 🚀 [로직 개선] 등록과 동시에 좌표를 가져와서 한 번에 완성 (비용 방어: 주소가 있을 때만 호출)
+                            with st.spinner("주소 좌표를 자동으로 변환하고 저장 중입니다..."):
+                                n_lat, n_lon = None, None
+                                if single_addr.strip():
+                                    n_lat, n_lon = get_lat_lon(single_addr.strip())
+                                    
+                                new_store = pd.DataFrame([{
+                                    "접점코드": single_code.strip(),
+                                    "보유처명": single_name.strip(),
+                                    "사업장주소": single_addr.strip(),
+                                    "대권역구분": single_region.strip(),
+                                    "상권구분": single_so.strip(),
+                                    "x좌표": n_lon if n_lon else "",
+                                    "y좌표": n_lat if n_lat else ""
+                                }])
                             existing = all_data_df.copy()
                             if not existing.empty and single_code.strip() in existing['접점코드'].astype(str).values:
                                 st.error(f"⚠️ 이미 존재하는 접점코드입니다: {single_code}")
@@ -814,9 +836,17 @@ with main_container.container():
                 # form 안에서는 반드시 st.form_submit_button을 사용해야 합니다.
                 submit_edit = st.form_submit_button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True)
                 
-                if submit_edit:
-                    save_sheet(edited_df, "stores")
-                    add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 저장")
+                if submit_edit:                      
+                        for idx, row in edited_df.iterrows():
+                            addr = str(row.get('사업장주소', ''))
+                            if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
+                                n_lat, n_lon = get_lat_lon(addr)
+                                if n_lat:
+                                    edited_df.at[idx, 'y좌표'] = n_lat
+                                    edited_df.at[idx, 'x좌표'] = n_lon
+
+                        save_sheet(edited_df, "stores")
+                        add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 자동 좌표 저장")
                     st.success("✅ 저장이 완료되었습니다. 잠시 후 새로고침됩니다.")
                     time.sleep(1.5) # 성공 메시지를 읽을 수 있도록 1.5초 대기
                     st.rerun()
