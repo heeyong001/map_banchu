@@ -338,18 +338,7 @@ st.markdown("""
     div[data-testid="stDataEditor"], div[data-testid="stDataFrame"] { background-color: #182C24 !important; border: 1px solid #3A5A4A !important; 
     }
             
-    /* 🚀 [최종 잔상 박멸] 어떤 버전이든 이전 화면(stale)을 즉시 삭제 및 투명화 */
-    *[data-stale="true"] {
-        opacity: 0 !important;
-        display: none !important;
-        transition: none !important;
-        pointer-events: none !important;
-    }
-    
-    div[data-testid="stAppViewContainer"] > div:first-child {
-        opacity: 1 !important;
-    }
-            /* 🚀 [추가] 다운로드 버튼 전용 블랙&골드 스타일 */
+    /* 🚀 [추가] 다운로드 버튼 전용 블랙&골드 스타일 */
     [data-testid="stDownloadButton"] button {
         background-color: #000000 !important; /* 배경 검정 */
         color: #D4AF37 !important;           /* 글자 금색 */
