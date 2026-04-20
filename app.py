@@ -835,7 +835,14 @@ with main_container.container():
                 # form 안에서는 반드시 st.form_submit_button을 사용해야 합니다.
                 submit_edit = st.form_submit_button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True)
                 
-                if submit_edit:                      
+                if submit_edit:
+                    # 🚀 [로직 개선] 저장 버튼 클릭 시, 빈칸 좌표만 쏙쏙 골라서 자동 채우기
+                    with st.spinner("변경된 데이터를 분석하고 필요한 좌표를 가져오는 중입니다..."):
+                        if 'x좌표' not in edited_df.columns: edited_df['x좌표'] = ""
+                        if 'y좌표' not in edited_df.columns: edited_df['y좌표'] = ""
+                        edited_df['x좌표'] = edited_df['x좌표'].astype(object)
+                        edited_df['y좌표'] = edited_df['y좌표'].astype(object)
+                        
                         for idx, row in edited_df.iterrows():
                             addr = str(row.get('사업장주소', ''))
                             if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
@@ -846,6 +853,8 @@ with main_container.container():
 
                         save_sheet(edited_df, "stores")
                         add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 자동 좌표 저장")
+                    
+                    # 들여쓰기 라인 맞춤 완료!
                     st.success("✅ 저장이 완료되었습니다. 잠시 후 새로고침됩니다.")
                     time.sleep(1.5) # 성공 메시지를 읽을 수 있도록 1.5초 대기
                     st.rerun()
