@@ -147,6 +147,23 @@ st.markdown("""
     [data-testid="stFileUploader"] section {
         background-color: #182C24 !important;
     }
+    /* 🚀 [수정] 펼치기(Expander) 박스 클릭 시 하얗게 변하는 현상 방지 */
+    [data-testid="stExpander"] {
+        background-color: #182C24 !important;
+        border: 1px solid #3A5A4A !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stExpander"] details summary p {
+        color: #D4AF37 !important; /* 제목을 금색으로 */
+        font-weight: bold !important;
+    }
+    [data-testid="stExpanderDetails"] {
+        background-color: #0A1712 !important; /* 펼쳐진 안쪽은 살짝 더 어두운 톤으로 */
+        color: #E5E9F0 !important;
+    }
+    [data-testid="stExpander"] svg {
+        color: #D4AF37 !important; /* 화살표 아이콘 금색 */
+    }
             
     /* 🚀 [추가] 파일 업로더 안의 "Browse files" 버튼 전용 블랙&골드 스타일 */
     [data-testid="stFileUploader"] button {
@@ -510,6 +527,9 @@ if not st.session_state['logged_in']:
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
                         
+                        # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
+                        add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
+                        
                         # 🚀 [수정] 한국 시간(KST) 기준으로 서버 시간 강제 고정하여 자정 계산
                         KST = timezone(timedelta(hours=9))
                         now = datetime.now(KST)
@@ -723,20 +743,32 @@ with main_container.container():
                             else:
                                 for col in ['x좌표', 'y좌표']:
                                     if col not in bulk_df.columns: bulk_df[col] = ""
+                                # 🚀 [로직 개선] 기존 데이터 유지 + 겹치면 덮어쓰기 + 신규 추가 완벽 구현
                                 bulk_df['접점코드'] = bulk_df['접점코드'].astype(str).str.strip()
-                                bulk_df.set_index('접점코드', inplace=True)
+                                # 혹시 모를 엑셀 파일 내의 중복 코드 제거 (맨 마지막 줄 기준)
+                                bulk_df = bulk_df.drop_duplicates(subset=['접점코드'], keep='last')
                                 
                                 temp_all = all_data_df.copy()
                                 if not temp_all.empty and '접점코드' in temp_all.columns:
                                     temp_all['접점코드'] = temp_all['접점코드'].astype(str).str.strip()
-                                    temp_all.set_index('접점코드', inplace=True)
-                                    temp_all.update(bulk_df)
-                                    new_data = bulk_df[~bulk_df.index.isin(temp_all.index)]
-                                    updated_all = pd.concat([temp_all, new_data]).reset_index()
-                                else: updated_all = bulk_df.reset_index()
+                                    
+                                    # 1. 기존 DB와 새 엑셀 데이터를 위아래로 무식하게 합칩니다.
+                                    combined_df = pd.concat([temp_all, bulk_df], ignore_index=True)
+                                    
+                                    # 2. 접점코드가 겹치면, 맨 밑에 붙은 '새로 업로드한 데이터(last)'를 남기고 예전 데이터를 삭제! (완벽한 업데이트)
+                                    updated_all = combined_df.drop_duplicates(subset=['접점코드'], keep='last')
+                                else: 
+                                    updated_all = bulk_df
                                 
                                 save_sheet(updated_all, "stores")
-                                st.success(f"✅ 일괄 저장이 완료되었습니다. 위쪽의 [전체 최적화] 버튼을 한 번 눌러주세요!")
+                                
+                                # 대량 등록도 로그에 남김
+                                add_audit_log(st.session_state['username'], "보유처 대량 등록", f"엑셀 파일 업로드 ({len(bulk_df)}건 반영)")
+                                
+                                st.success(f"✅ 총 {len(bulk_df)}건의 데이터가 일괄 저장/업데이트 되었습니다. 구글 시트 동기화를 위해 잠시 대기합니다...")
+                                
+                                # 🚀 [핵심] 구글 시트에 데이터가 완전히 써질 수 있도록 1.5초 딜레이 부여! (미반영 현상 해결)
+                                time.sleep(1.5) 
                                 st.rerun()
 
             st.markdown("---")
