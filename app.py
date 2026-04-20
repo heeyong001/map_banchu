@@ -1528,7 +1528,7 @@ with main_container.container():
                                     z_index_offset=z
                                 ).add_to(m)
 
-                            st_folium(m, width="100%", height=400, returned_objects=[], key="safe_map_view")
+                            st_folium(m, width="100%", height=500, returned_objects=[], key="safe_map_view")
 
                         else:
                             st.info("지도 데이터 없음")
