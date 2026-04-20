@@ -565,7 +565,7 @@ with main_container.container():
         # 탭 1: 계정 관리
         # ---------------------------------------------------------
         with tab1:
-            users_df = load_sheet("users", ttl=0)
+            users_df = load_sheet("users", ttl=10m)
             
             # 1. 상단: 계정 생성 및 수정/삭제 폼
             col_new, col_edit = st.columns(2)
@@ -646,7 +646,7 @@ with main_container.container():
                 </style>
             """, unsafe_allow_html=True)
 
-            all_data_df = load_sheet("stores", ttl=0)
+            all_data_df = load_sheet("stores", ttl=10m)
             
             c1, c2 = st.columns([7, 3])
             with c1: st.markdown(f"#### 🏢 보유처 주소록 DB 관리 (총 {len(all_data_df)}개)")
@@ -786,7 +786,7 @@ with main_container.container():
                     # 1. 데이터 로드 및 전처리
                     raw_df = pd.read_excel(DATA_FILE, dtype=str)
                     raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
-                    db_df = load_sheet("stores", ttl=0)
+                    db_df = load_sheet("stores", ttl=10m)
                     
                     boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
                     code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
@@ -847,7 +847,7 @@ with main_container.container():
             st.caption("누가, 언제, 어떤 작업을 수행했는지 확인합니다. (최근 100건)")
             
             try:
-                log_df = load_sheet("logs", ttl=0)
+                log_df = load_sheet("logs", ttl=10m)
                 if not log_df.empty:
                     # [회원님 원본 복원] 컬럼명 유지 및 역순 정렬
                     log_df = log_df.sort_values(by="발생시간", ascending=False).head(100)
