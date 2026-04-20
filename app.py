@@ -807,11 +807,19 @@ with main_container.container():
                             st.warning("⚠️ 접점코드와 보유처명은 필수입니다.")
 
             st.markdown("---")
-            edited_df = st.data_editor(all_data_df, num_rows="dynamic", use_container_width=True, height=400, key="bulk_editor_v3")
-            if st.button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True):
-                save_sheet(edited_df, "stores")
-                st.success("✅ 저장이 완료되었습니다. 위쪽의 [전체 최적화] 버튼을 한 번 눌러주세요!")
-                st.rerun()
+            # 🚀 [수정] 글자 입력 시마다 새로고침 되는 것을 막기 위해 st.form으로 묶음
+            with st.form("bulk_edit_form"):
+                edited_df = st.data_editor(all_data_df, num_rows="dynamic", use_container_width=True, height=400, key="bulk_editor_v4")
+                
+                # form 안에서는 반드시 st.form_submit_button을 사용해야 합니다.
+                submit_edit = st.form_submit_button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True)
+                
+                if submit_edit:
+                    save_sheet(edited_df, "stores")
+                    add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 저장")
+                    st.success("✅ 저장이 완료되었습니다. 잠시 후 새로고침됩니다.")
+                    time.sleep(1.5) # 성공 메시지를 읽을 수 있도록 1.5초 대기
+                    st.rerun()
 
         # ---------------------------------------------------------
         # 탭 3: 미매칭 보유처 확인
@@ -820,64 +828,67 @@ with main_container.container():
             st.markdown("#### ⚠️ 미매칭 보유처 확인")
             st.caption("현재 엑셀 데이터 중 주소록(DB)과 매칭되지 않는 목록을 상세 사유와 함께 표시합니다.")
 
-            DATA_FILE = 'inventory_data.xlsx'
-            if os.path.exists(DATA_FILE):
-                try:
-                    # 1. 데이터 로드 및 전처리
-                    raw_df = pd.read_excel(DATA_FILE, dtype=str)
-                    raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
-                    db_df = load_sheet("stores", ttl="10m")
-                    
-                    boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
-                    code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
-                    
-                    if boyu_col and code_col:
-                        # 🚀 [요청 반영 1] "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
-                        raw_filtered = raw_df[
-                            (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
-                            (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
-                        ].copy()
-
-                        # 중복 제거 (이름과 코드 조합 기준)
-                        raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col, code_col]).copy()
-                        db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip() 
-                        
-                        def get_unmatch_reason(row):
-                            code = str(row[code_col]).strip()
+            # 🚀 [수정] 탭 이동 시 자동 실행을 막고, 조회 버튼을 추가하여 최신 정보로 비교
+            if st.button("🔄 최신 DB 기준으로 미매칭 데이터 조회", type="primary", use_container_width=True):
+                # 핵심! 확실한 갱신을 위해 파이썬이 기억하는 이전 데이터 메모리를 한 번 날려줍니다.
+                st.cache_data.clear()
+                
+                DATA_FILE = 'inventory_data.xlsx'
+                if os.path.exists(DATA_FILE):
+                    with st.spinner("최신 DB와 엑셀 데이터를 비교 분석 중입니다..."):
+                        try:
+                            # 1. 데이터 로드 및 전처리
+                            raw_df = pd.read_excel(DATA_FILE, dtype=str)
+                            raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
+                            db_df = load_sheet("stores", ttl="10m")
                             
-                            # 🚀 [요청 반영 2] 미매칭 사유 구분 (n/a 누락 vs DB 미등록)
-                            if not code or code.lower() in ['nan', 'none', 'n/a', '']:
-                                return "❌ 엑셀 재고표에 접점번호가 누락되었습니다 (n/a)."
+                            boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
+                            code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
+                            
+                            if boyu_col and code_col:
+                                # "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
+                                raw_filtered = raw_df[
+                                    (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
+                                    (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
+                                ].copy()
+
+                                # 중복 제거 (이름과 코드 조합 기준)
+                                raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col, code_col]).copy()
+                                db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip() 
                                 
-                            match = db_df[db_df['접점코드'] == code]
-                            if match.empty: 
-                                return "❌ 주소록 DB에 등록되지 않은 접점코드입니다."
-                            
-                            # 추가 체크: 주소나 좌표가 없는 경우
-                            m_row = match.iloc[0]
-                            addr = str(m_row.get('사업장주소', '')).strip()
-                            x_val = str(m_row.get('x좌표', '')).strip().lower()
-                            
-                            if not addr or addr == 'nan': return "📍 DB에 등록은 되어있으나 주소 정보가 누락되었습니다."
-                            if not x_val or x_val == 'nan' or x_val == 'none': return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
-                            return None 
+                                def get_unmatch_reason(row):
+                                    code = str(row[code_col]).strip()
+                                    if not code or code.lower() in ['nan', 'none', 'n/a', '']:
+                                        return "❌ 엑셀 재고표에 접점번호가 누락되었습니다 (n/a)."
+                                        
+                                    match = db_df[db_df['접점코드'] == code]
+                                    if match.empty: 
+                                        return "❌ 주소록 DB에 등록되지 않은 접점코드입니다."
+                                    
+                                    m_row = match.iloc[0]
+                                    addr = str(m_row.get('사업장주소', '')).strip()
+                                    x_val = str(m_row.get('x좌표', '')).strip().lower()
+                                    
+                                    if not addr or addr == 'nan': return "📍 DB에 등록은 되어있으나 주소 정보가 누락되었습니다."
+                                    if not x_val or x_val == 'nan' or x_val == 'none': return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
+                                    return None 
 
-                        # 사유 분석 적용
-                        raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
-                        unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
+                                raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
+                                unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
 
-                        if not unmapped_display.empty:
-                            st.warning(f"총 **{len(unmapped_display)}**건의 미매칭 데이터가 발견되었습니다.")
-                            final_cols = [boyu_col, '미매칭 사유']
-                            if '대분류' in unmapped_display.columns: final_cols.append('대분류')
-                            
-                            # 결과 테이블 출력
-                            st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
-                        else: 
-                            st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
-                    else: st.error("엑셀 파일에서 '보유처' 또는 '접점코드' 컬럼을 식별할 수 없습니다.")
-                except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
-            else: st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
+                                if not unmapped_display.empty:
+                                    st.warning(f"총 **{len(unmapped_display)}**건의 미매칭 데이터가 발견되었습니다.")
+                                    final_cols = [boyu_col, '미매칭 사유']
+                                    if '대분류' in unmapped_display.columns: final_cols.append('대분류')
+                                    st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
+                                else: 
+                                    st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
+                            else: st.error("엑셀 파일에서 '보유처' 또는 '접점코드' 컬럼을 식별할 수 없습니다.")
+                        except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
+                else: 
+                    st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
+            else:
+                st.info("👆 위 버튼을 눌러 최신 DB 데이터를 기준으로 미매칭 목록을 조회하세요.")
 
         # ---------------------------------------------------------
         # 탭 4: 시스템 변경 이력 (Audit Log)
