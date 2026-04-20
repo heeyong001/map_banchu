@@ -665,6 +665,13 @@ with main_container.container():
             if st.button("⚡ 빈칸 좌표만 골라서 일괄 생성 (클릭)", type="primary", use_container_width=True):
                 with st.spinner("좌표가 없는 매장을 찾아 API를 호출 중입니다..."):
                     opt_df = all_data_df.copy()
+                    
+                    # 🚀 [에러 해결] 판다스의 엄격한 타입 체크 충돌을 막기 위해 컬럼을 유연한 타입(object)으로 강제 변환
+                    if 'x좌표' not in opt_df.columns: opt_df['x좌표'] = ""
+                    if 'y좌표' not in opt_df.columns: opt_df['y좌표'] = ""
+                    opt_df['x좌표'] = opt_df['x좌표'].astype(object)
+                    opt_df['y좌표'] = opt_df['y좌표'].astype(object)
+                    
                     api_call_count = 0
                     
                     # 오직 '주소가 있는데 좌표가 비어있는 경우'에만 API 호출!
@@ -673,8 +680,9 @@ with main_container.container():
                         if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
                             n_lat, n_lon = get_lat_lon(addr)
                             if n_lat:
-                                opt_df.at[idx, 'y좌표'] = str(n_lat)
-                                opt_df.at[idx, 'x좌표'] = str(n_lon)
+                                # 🚀 강제로 문자로 바꾸지 않고(str 제거), 네이버 API가 준 숫자(float) 그대로 안전하게 입력
+                                opt_df.at[idx, 'y좌표'] = n_lat
+                                opt_df.at[idx, 'x좌표'] = n_lon
                                 api_call_count += 1
                     
                     if api_call_count > 0:
