@@ -1200,153 +1200,160 @@ with main_container.container():
 
             # 3. 검색창
             st.markdown("---")
-            c_model, c_color = st.columns(2)
-            
-            with c_model:
-                raw_models = df[real_model].unique().tolist()
-                display_options = []
-                grouped_items = []
-                for label, items in MODEL_GROUPS.items():
-                    if any(i in raw_models for i in items):
-                        display_options.append(label)
-                        grouped_items.extend(items)
-                for m in raw_models:
-                    if m not in grouped_items: display_options.append(str(m))
-                display_options.sort()
-                
-                selected_models_display = st.multiselect("모델", display_options, placeholder="선택하세요")
-                
-                selected_models = []
-                for opt in selected_models_display:
-                    if opt in MODEL_GROUPS: selected_models.extend(MODEL_GROUPS[opt])
-                    else: selected_models.append(opt)
 
-            with c_color:
-                if real_color:
-                    color_placeholder = "선택하세요"
-                    if selected_models:
-                        filtered_df = df[df[real_model].isin(selected_models)]
-                        sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
-                        color_placeholder = f"💡 {selected_models_display[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
-                    else:
-                        sorted_colors = sorted(df[real_color].dropna().unique().tolist())
+            # 🚀 [추가] 검색창 구역만 따로 새로고침되도록 격리 (화면 깜빡임 원천 차단)
+            @st.fragment
+            def search_filter_section():
+                c_model, c_color = st.columns(2)
+                
+                with c_model:
+                    raw_models = df[real_model].unique().tolist()
+                    display_options = []
+                    grouped_items = []
+                    for label, items in MODEL_GROUPS.items():
+                        if any(i in raw_models for i in items):
+                            display_options.append(label)
+                            grouped_items.extend(items)
+                    for m in raw_models:
+                        if m not in grouped_items: display_options.append(str(m))
+                    display_options.sort()
                     
-                    selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
-                else:
-                    st.write("-")
+                    selected_models_display = st.multiselect("모델", display_options, placeholder="선택하세요")
+                    
+                    selected_models = []
+                    for opt in selected_models_display:
+                        if opt in MODEL_GROUPS: selected_models.extend(MODEL_GROUPS[opt])
+                        else: selected_models.append(opt)
 
-            c_region_dae, c_region_so, c_owner = st.columns(3)
-            
-            with c_region_dae:
-                all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
-                
-                if "강원" in all_dae:
-                    all_dae.remove("강원")
-                    all_dae.append("강원")
-                    
-                # [수정] 사무실 전용 버튼 대분류에 추가
-                if "사무실(반추정보통신)" not in all_dae:
-                    all_dae.insert(0, "사무실(반추정보통신)")
-                    
-                selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
-                
-            with c_region_so:
-                if selected_dae:
-                    # 사무실 필터링 스마트 처리 
-                    actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                    mask_so = df['대분류_캐시'].isin(actual_dae)
-                    if "사무실(반추정보통신)" in selected_dae:
-                        mask_so |= df[real_boyu].astype(str).str.contains("반추", na=False)
-                    so_options_df = df[mask_so]
-                else:
-                    so_options_df = df
-                    
-                raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
-                
-                # [핵심 최적화 구간] 반복문 내의 무거운 필터링을 제거하고 100배 빠른 딕셔너리 매핑으로 교체
-                so_priority = {}
-                if '사업장주소' in so_options_df.columns:
-                    # 중복을 제거하고 소분류별 첫 번째 주소만 남겨 '사전'으로 만듭니다.
-                    valid_df = so_options_df.dropna(subset=['사업장주소']).drop_duplicates(subset=['소분류_캐시'])
-                    addr_map = dict(zip(valid_df['소분류_캐시'], valid_df['사업장주소']))
-                    
-                    for so in raw_so:
-                        prio = 5
-                        addr = str(addr_map.get(so, "")).strip()
-                        if addr.startswith("서울"): prio = 1
-                        elif addr.startswith("인천"): prio = 2
-                        elif addr.startswith("경기"): prio = 3
-                        elif addr.startswith("강원"): prio = 4
-                        so_priority[so] = prio
-                else:
-                    for so in raw_so:
-                        so_priority[so] = 5
+                with c_color:
+                    if real_color:
+                        color_placeholder = "선택하세요"
+                        if selected_models:
+                            filtered_df = df[df[real_model].isin(selected_models)]
+                            sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
+                            color_placeholder = f"💡 {selected_models_display[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
+                        else:
+                            sorted_colors = sorted(df[real_color].dropna().unique().tolist())
                         
-                all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
-                
-                # [추가] 소분류 목록에 '집단상가'를 강제로 추가
-                if "집단상가" not in all_so:
-                    all_so.insert(0, "집단상가")
-                    
-                selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
-                
-            with c_owner:
-                _key = (
-                    tuple(sorted(selected_models)),
-                    tuple(sorted(selected_colors if selected_colors else [])),
-                    tuple(sorted(selected_dae)),
-                    tuple(sorted(selected_so))
-                )
-                if st.session_state.get('_owner_cache_key') != _key:
-                    _odf = df.copy()
-                    if selected_models:
-                        _odf = _odf[_odf[real_model].isin(selected_models)]
-                    if real_color and selected_colors:
-                        _odf = _odf[_odf[real_color].isin(selected_colors)]
-                    if selected_dae:
-                        _adae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                        _mask = _odf['대분류_캐시'].isin(_adae)
-                        if "사무실(반추정보통신)" in selected_dae:
-                            _mask |= _odf[real_boyu].astype(str).str.contains("반추", na=False)
-                        _odf = _odf[_mask]
-                    if selected_so:
-                        _odf = _odf[_odf['소분류_캐시'].isin(selected_so) | _odf['소분류_유추불가']]
-                    st.session_state['_owner_cache_key'] = _key
-                    st.session_state['_owner_cache_list'] = sorted(
-                        [str(x) for x in _odf[real_boyu].unique() if pd.notna(x)]
-                    )
-                all_owners = st.session_state.get('_owner_cache_list', [])
-                selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
+                        selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
+                    else:
+                        st.write("-")
 
-            st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
-            
-            if st.button("🚀 조회하기", use_container_width=True):
-                is_specific_owner = bool(selected_owners)
-                if not selected_models and not is_specific_owner:
-                    st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
+                c_region_dae, c_region_so, c_owner = st.columns(3)
+                
+                with c_region_dae:
+                    all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
                     
-                    # 🚀 [핵심 추가] 검색 조건이 초기화/부족할 때, 이전 검색 결과(지도 및 리스트)를 화면에서 완전히 지워버림!
-                    st.session_state['filtered_data'] = None 
+                    if "강원" in all_dae:
+                        all_dae.remove("강원")
+                        all_dae.append("강원")
+                        
+                    # [수정] 사무실 전용 버튼 대분류에 추가
+                    if "사무실(반추정보통신)" not in all_dae:
+                        all_dae.insert(0, "사무실(반추정보통신)")
+                        
+                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
                     
-                else:
-                    st.session_state['search_clicked'] = True
-                    # ... 이하 검색 로직 ...
+                with c_region_so:
+                    if selected_dae:
+                        # 사무실 필터링 스마트 처리 
+                        actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+                        mask_so = df['대분류_캐시'].isin(actual_dae)
+                        if "사무실(반추정보통신)" in selected_dae:
+                            mask_so |= df[real_boyu].astype(str).str.contains("반추", na=False)
+                        so_options_df = df[mask_so]
+                    else:
+                        so_options_df = df
+                        
+                    raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
                     
-                    # 🚀 [핵심 캐싱 적용] 튜플 형태로 넘겨서 동일한 조합은 즉시 로딩되도록 함
-                    list_res, map_res = get_cached_search_results(
-                        df, 
-                        tuple(selected_models), 
-                        tuple(selected_colors) if selected_colors else tuple(), 
-                        tuple(selected_owners) if selected_owners else tuple(), 
-                        tuple(selected_dae) if selected_dae else tuple(), 
-                        tuple(selected_so) if selected_so else tuple(),
-                        real_model, real_color, real_boyu
+                    # [핵심 최적화 구간] 반복문 내의 무거운 필터링을 제거하고 100배 빠른 딕셔너리 매핑으로 교체
+                    so_priority = {}
+                    if '사업장주소' in so_options_df.columns:
+                        # 중복을 제거하고 소분류별 첫 번째 주소만 남겨 '사전'으로 만듭니다.
+                        valid_df = so_options_df.dropna(subset=['사업장주소']).drop_duplicates(subset=['소분류_캐시'])
+                        addr_map = dict(zip(valid_df['소분류_캐시'], valid_df['사업장주소']))
+                        
+                        for so in raw_so:
+                            prio = 5
+                            addr = str(addr_map.get(so, "")).strip()
+                            if addr.startswith("서울"): prio = 1
+                            elif addr.startswith("인천"): prio = 2
+                            elif addr.startswith("경기"): prio = 3
+                            elif addr.startswith("강원"): prio = 4
+                            so_priority[so] = prio
+                    else:
+                        for so in raw_so:
+                            so_priority[so] = 5
+                            
+                    all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
+                    
+                    # [추가] 소분류 목록에 '집단상가'를 강제로 추가
+                    if "집단상가" not in all_so:
+                        all_so.insert(0, "집단상가")
+                        
+                    selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
+                    
+                with c_owner:
+                    _key = (
+                        tuple(sorted(selected_models)),
+                        tuple(sorted(selected_colors if selected_colors else [])),
+                        tuple(sorted(selected_dae)),
+                        tuple(sorted(selected_so))
                     )
-                    
-                    st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
-                    st.session_state['selected_idx'] = None
-                    st.session_state['clicked_store_name'] = None
-                    st.rerun()
+                    if st.session_state.get('_owner_cache_key') != _key:
+                        _odf = df.copy()
+                        if selected_models:
+                            _odf = _odf[_odf[real_model].isin(selected_models)]
+                        if real_color and selected_colors:
+                            _odf = _odf[_odf[real_color].isin(selected_colors)]
+                        if selected_dae:
+                            _adae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
+                            _mask = _odf['대분류_캐시'].isin(_adae)
+                            if "사무실(반추정보통신)" in selected_dae:
+                                _mask |= _odf[real_boyu].astype(str).str.contains("반추", na=False)
+                            _odf = _odf[_mask]
+                        if selected_so:
+                            _odf = _odf[_odf['소분류_캐시'].isin(selected_so) | _odf['소분류_유추불가']]
+                        st.session_state['_owner_cache_key'] = _key
+                        st.session_state['_owner_cache_list'] = sorted(
+                            [str(x) for x in _odf[real_boyu].unique() if pd.notna(x)]
+                        )
+                    all_owners = st.session_state.get('_owner_cache_list', [])
+                    selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
+
+                st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
+                
+                if st.button("🚀 조회하기", use_container_width=True):
+                    is_specific_owner = bool(selected_owners)
+                    if not selected_models and not is_specific_owner:
+                        st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
+                        
+                        # 🚀 [핵심 추가] 검색 조건이 초기화/부족할 때, 이전 검색 결과(지도 및 리스트)를 화면에서 완전히 지워버림!
+                        st.session_state['filtered_data'] = None 
+                        
+                    else:
+                        st.session_state['search_clicked'] = True
+                        # ... 이하 검색 로직 ...
+                        
+                        # 🚀 [핵심 캐싱 적용] 튜플 형태로 넘겨서 동일한 조합은 즉시 로딩되도록 함
+                        list_res, map_res = get_cached_search_results(
+                            df, 
+                            tuple(selected_models), 
+                            tuple(selected_colors) if selected_colors else tuple(), 
+                            tuple(selected_owners) if selected_owners else tuple(), 
+                            tuple(selected_dae) if selected_dae else tuple(), 
+                            tuple(selected_so) if selected_so else tuple(),
+                            real_model, real_color, real_boyu
+                        )
+                        
+                        st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
+                        st.session_state['selected_idx'] = None
+                        st.session_state['clicked_store_name'] = None
+                        st.rerun()
+
+            # 🚀 [추가] 묶어둔 검색창 함수를 여기서 실행합니다.
+            search_filter_section()            
 
             # 4. 결과 출력
             if st.session_state['filtered_data'] is not None:
