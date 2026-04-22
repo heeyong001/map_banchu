@@ -1594,7 +1594,7 @@ with main_container.container():
                             /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
                             div[data-testid="stRadio"] {
                                 margin-top: -20px !important; 
-                                margin-bottom: -20px !important; 
+                                margin-bottom: -30px !important; 
                                 margin-left: 15px !important;    
                             }
 
