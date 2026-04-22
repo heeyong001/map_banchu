@@ -1593,8 +1593,9 @@ with main_container.container():
                             
                             /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
                             div[data-testid="stRadio"] {
-                                margin-top: -10px !important; 
-                                margin-bottom: 0px !important; 
+                                margin-top: -20px !important; 
+                                margin-bottom: -20px !important; 
+                                margin-left: 15px !important;    
                             }
 
                             /* 3. 스크롤 박스 전체를 위로 끌어올리기 */
