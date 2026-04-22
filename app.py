@@ -1515,110 +1515,41 @@ with main_container.container():
                                     # [수정] 복사하기 텍스트에도 유형(typ) 추가
                                     copy_text_lines.append(f"{r[real_model]} | {cn} | {typ} | {stt} | {tgt}")
                                     
-                                # 1. 기본 복사 텍스트 세팅 
-                                copy_text = "\n".join(copy_text_lines) + "\n\n사용가능할까요?"
+                                copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
-                                # 2. HTML 팝업창 렌더링 (자바스크립트 완벽 개선)
                                 popup_html = f"""
-                                <div style='width:100%; min-width:280px; max-width:350px; font-family:sans-serif;'>
-                                    
-                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:8px; text-align:center; position:relative;'>
+                                <div style='width:100%; min-width:300px; font-family:sans-serif;'>
+                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:3px; text-align:center; position:relative;'>
                                         {popup_title}
-                                        <textarea id='base_text_{uid}' style='display:none;'>{copy_text}</textarea>
-                                        
+                                        <textarea id='{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
                                         <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
-                                            try {{
-                                                var nl = String.fromCharCode(10); /* 파이썬 에러 방지용 안전한 줄바꿈 코드 */
-                                                var baseTa = document.getElementById('base_text_{uid}');
-                                                var memo = document.getElementById('memo_{uid}').value.trim();
-                                                
-                                                var finalTxt = baseTa.value;
-                                                if(memo !== '') {{
-                                                    finalTxt += nl + memo + ' 이동합니다.';
-                                                }} else {{
-                                                    finalTxt += nl + '*** 이동합니다.';
-                                                }}
-                                                
-                                                // 1. 최신 브라우저 복사 방식 먼저 시도
-                                                if (navigator.clipboard && window.isSecureContext) {{
-                                                    navigator.clipboard.writeText(finalTxt).then(function() {{
-                                                        alert('✅ 복사가 완료되었습니다!' + nl + nl + finalTxt);
-                                                    }}).catch(function() {{
-                                                        fallbackCopy(finalTxt, nl);
-                                                    }});
-                                                }} else {{
-                                                    // 2. 구형 방식 및 모바일(iOS) 대응 폴백
-                                                    fallbackCopy(finalTxt, nl);
-                                                }}
-                                                
-                                                function fallbackCopy(text, nl) {{
-                                                    var tempTa = document.createElement('textarea');
-                                                    tempTa.value = text;
-                                                    tempTa.style.position = 'fixed';
-                                                    tempTa.style.left = '-9999px';
-                                                    tempTa.style.top = '0';
-                                                    document.body.appendChild(tempTa);
-                                                    
-                                                    // 📱 [핵심] 아이폰(iOS) Safari 강제 복사 허용 로직
-                                                    if (navigator.userAgent.match(/ipad|iphone/i)) {{
-                                                        tempTa.contentEditable = true;
-                                                        tempTa.readOnly = false;
-                                                        var range = document.createRange();
-                                                        range.selectNodeContents(tempTa);
-                                                        var selection = window.getSelection();
-                                                        selection.removeAllRanges();
-                                                        selection.addRange(range);
-                                                        tempTa.setSelectionRange(0, 999999);
-                                                    }} else {{
-                                                        tempTa.focus();
-                                                        tempTa.select();
-                                                    }}
-                                                    
-                                                    var success = document.execCommand('copy');
-                                                    document.body.removeChild(tempTa);
-                                                    
-                                                    if(success) {{
-                                                        alert('✅ 복사가 완료되었습니다!' + nl + nl + text);
-                                                    }} else {{
-                                                        alert('⚠️ 브라우저 보안 설정으로 인해 복사할 수 없습니다.');
-                                                    }}
-                                                }}
-                                            }} catch(err) {{
-                                                alert('에러 발생: ' + err.message);
-                                            }}
+                                            var ta = document.getElementById('{uid}');
+                                            ta.style.display = 'block';
+                                            ta.select();
+                                            document.execCommand('copy');
+                                            ta.style.display = 'none';
+                                            alert('목록이 복사되었습니다!');
                                         " title="내용 복사"></i>
                                     </div>
                                     
-                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         📍 {address_txt}
                                     </div>
                                     
-                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
-                                        📍 {address_txt}
-                                    </div>
-
-                                    <div style='margin-bottom:8px; text-align:center;'>
-                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳을 입력하시면, 클립보드에 복사됩니다' 
-                                               style='width:95%; padding:5px; font-size:11px; border:1px solid #aaa; border-radius:4px; box-sizing:border-box;'>
-                                    </div>
-                                    
-                                    <div style='max-height: 150px; overflow-y: auto; border-bottom: 1px solid #eee;'>
-                                        <table style='width:100%; border-collapse:collapse; font-size:11px;'>
-                                            <thead>
-                                                <tr style='background-color:#f0f0f0; position: sticky; top: 0; z-index: 1;'>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>유형</th> 
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {t_rows}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                    <table style='width:100%; border-collapse:collapse; font-size:11px;'>
+                                        <thead>
+                                            <tr style='background-color:#f0f0f0;'>
+                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
+                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
+                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>유형</th> <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
+                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
+                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {t_rows}
+                                        </tbody>
+                                    </table>
                                 </div>
                                 """
                                 
@@ -1654,7 +1585,7 @@ with main_container.container():
                     # 오른쪽: 리스트 뷰
                     with list_col:
                         
-                        # 🚀 [업데이트] 라디오 버튼 모바일 강제 1줄 CSS 삭제 (모바일 지도 레이아웃 원복)
+                        # 🚀 [업데이트] 라디오 버튼 모바일 한 줄 정렬 및 여백 극한 축소
                         st.markdown("""
                             <style>
                             /* 1. 라디오 버튼 위에 숨어있는 투명한 라벨 공간 삭제 */
@@ -1675,6 +1606,39 @@ with main_container.container():
                             /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
                             div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                                 gap: 1px !important; 
+                            }
+                            
+                            /* =========================================================
+                                📱 모바일 화면 강제 한 줄(Inline) 및 여백 최적화 로직
+                               ========================================================= */
+                            
+                            /* 🚀 5. 모바일 화면에서 컬럼이 밑으로 떨어지지 않고 무조건 한 줄에 유지되도록 반응형 덮어쓰기 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) {
+                                display: flex !important;
+                                flex-direction: row !important;
+                                flex-wrap: nowrap !important;
+                                gap: 2px !important;
+                            }
+                            
+                            /* 🚀 6. 컬럼이 차지하는 잉여 여백을 없애서 비좁은 모바일 공간 확보 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) > div[data-testid="column"] {
+                                width: auto !important;
+                                flex: 1 1 0px !important;
+                                min-width: 0 !important;
+                                padding: 0px 2px !important;
+                            }
+
+                            /* 🚀 7. 라디오 버튼(동그라미+글씨) 간격을 최대한 좁히고 두 줄로 꺾이는 현상 절대 방지 */
+                            div[data-testid="stRadio"] > div {
+                                gap: 5px !important; 
+                                flex-wrap: nowrap !important; 
+                            }
+                            
+                            /* 🚀 8. 모바일 화면에 맞춰 텍스트 사이즈와 자간(글씨 간격)을 미세하게 압축 */
+                            div[data-testid="stRadio"] p {
+                                font-size: 13px !important;
+                                letter-spacing: -0.5px !important; 
+                                white-space: nowrap !important;
                             }
                             </style>
                         """, unsafe_allow_html=True)
