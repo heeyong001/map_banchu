@@ -1515,41 +1515,74 @@ with main_container.container():
                                     # [수정] 복사하기 텍스트에도 유형(typ) 추가
                                     copy_text_lines.append(f"{r[real_model]} | {cn} | {typ} | {stt} | {tgt}")
                                     
+                                # 1. 기본 복사 텍스트 세팅
                                 copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
+                                # 2. HTML 팝업창 렌더링 (주석 제거 및 에러 완벽 방지)
                                 popup_html = f"""
-                                <div style='width:100%; min-width:300px; font-family:sans-serif;'>
-                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:3px; text-align:center; position:relative;'>
+                                <div style='width:100%; min-width:280px; max-width:350px; font-family:sans-serif;'>
+                                    
+                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:8px; text-align:center; position:relative;'>
                                         {popup_title}
-                                        <textarea id='{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
+                                        <textarea id='base_text_{uid}' style='display:none;'>{copy_text}</textarea>
                                         <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
-                                            var ta = document.getElementById('{uid}');
-                                            ta.style.display = 'block';
-                                            ta.select();
-                                            document.execCommand('copy');
-                                            ta.style.display = 'none';
-                                            alert('목록이 복사되었습니다!');
+                                            try {{
+                                                var nl = String.fromCharCode(10);
+                                                var base = document.getElementById('base_text_{uid}').value;
+                                                var memo = document.getElementById('memo_{uid}').value.trim();
+                                                var finalTxt = base;
+                                                
+                                                if(memo !== '') {{
+                                                    finalTxt += nl + memo + ' 이동합니다.';
+                                                }} else {{
+                                                    finalTxt += nl + '';
+                                                }}
+                                                
+                                                var tempTa = document.createElement('textarea');
+                                                tempTa.value = finalTxt;
+                                                tempTa.style.position = 'fixed';
+                                                document.body.appendChild(tempTa);
+                                                tempTa.select();
+                                                var success = document.execCommand('copy');
+                                                document.body.removeChild(tempTa);
+                                                
+                                                if(success) {{
+                                                    alert('✅ 목록이 복사되었습니다!');
+                                                }} else {{
+                                                    alert('⚠️ 복사에 실패했습니다. 브라우저 설정을 확인해주세요.');
+                                                }}
+                                            }} catch(err) {{
+                                                alert('에러 발생: ' + err);
+                                            }}
                                         " title="내용 복사"></i>
                                     </div>
                                     
-                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         📍 {address_txt}
                                     </div>
+
+                                    <div style='margin-bottom:8px; text-align:center;'>
+                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳만입력하세요, "이동합니다" 멘트와 함께 복사됩니다' 
+                                               style='width:95%; padding:5px; font-size:11px; border:1px solid #aaa; border-radius:4px; box-sizing:border-box;'>
+                                    </div>
                                     
-                                    <table style='width:100%; border-collapse:collapse; font-size:11px;'>
-                                        <thead>
-                                            <tr style='background-color:#f0f0f0;'>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>유형</th> <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {t_rows}
-                                        </tbody>
-                                    </table>
+                                    <div style='max-height: 150px; overflow-y: auto; border-bottom: 1px solid #eee;'>
+                                        <table style='width:100%; border-collapse:collapse; font-size:11px;'>
+                                            <thead>
+                                                <tr style='background-color:#f0f0f0; position: sticky; top: 0; z-index: 1;'>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>유형</th> 
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {t_rows}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                                 """
                                 
@@ -1585,29 +1618,60 @@ with main_container.container():
                     # 오른쪽: 리스트 뷰
                     with list_col:
                         
-                        # [안전한 해결] 라디오 버튼 시작 위치(상단) 조절 기능 추가
+                        # 🚀 [업데이트] 라디오 버튼 모바일 한 줄 정렬 및 여백 극한 축소
                         st.markdown("""
                             <style>
                             /* 1. 라디오 버튼 위에 숨어있는 투명한 라벨 공간 삭제 */
-                            div.stRadio > label { 
-                                display: none !important; 
-                            }
+                            div.stRadio > label { display: none !important; }
                             
-                            /* 2. [핵심] 라디오 버튼의 위/아래 위치 세밀 조절 */
+                            /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
                             div[data-testid="stRadio"] {
-                                margin-top: -20px !important;    /* 👈 [높이 조절] 이 숫자를 조절해서 지도 상단과 일직선을 맞추세요! (-20px, -40px 등) */
-                                margin-bottom: -10px !important; /* 👈 아래 스크롤 박스와의 간격 조절 */
+                                margin-top: -20px !important; 
+                                margin-bottom: -30px !important; 
+                                margin-left: 15px !important;    
                             }
 
                             /* 3. 스크롤 박스 전체를 위로 끌어올리기 */
                             div[data-testid="stScrollableContainer"] {
-                                margin-top: -15px !important;
-                                padding-top: 0px !important;
+                                margin-top: -15px !important; padding-top: 0px !important;
                             }
                             
-                            /* 4. 스크롤 컨테이너 내부 버튼들 사이의 간격 촘촘하게 */
+                            /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
                             div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                                 gap: 1px !important; 
+                            }
+                            
+                            /* =========================================================
+                                📱 모바일 화면 강제 한 줄(Inline) 및 여백 최적화 로직
+                               ========================================================= */
+                            
+                            /* 🚀 5. 모바일 화면에서 컬럼이 밑으로 떨어지지 않고 무조건 한 줄에 유지되도록 반응형 덮어쓰기 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) {
+                                display: flex !important;
+                                flex-direction: row !important;
+                                flex-wrap: nowrap !important;
+                                gap: 2px !important;
+                            }
+                            
+                            /* 🚀 6. 컬럼이 차지하는 잉여 여백을 없애서 비좁은 모바일 공간 확보 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) > div[data-testid="column"] {
+                                width: auto !important;
+                                flex: 1 1 0px !important;
+                                min-width: 0 !important;
+                                padding: 0px 2px !important;
+                            }
+
+                            /* 🚀 7. 라디오 버튼(동그라미+글씨) 간격을 최대한 좁히고 두 줄로 꺾이는 현상 절대 방지 */
+                            div[data-testid="stRadio"] > div {
+                                gap: 5px !important; 
+                                flex-wrap: nowrap !important; 
+                            }
+                            
+                            /* 🚀 8. 모바일 화면에 맞춰 텍스트 사이즈와 자간(글씨 간격)을 미세하게 압축 */
+                            div[data-testid="stRadio"] p {
+                                font-size: 13px !important;
+                                letter-spacing: -0.5px !important; 
+                                white-space: nowrap !important;
                             }
                             </style>
                         """, unsafe_allow_html=True)
