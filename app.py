@@ -1627,7 +1627,7 @@ with main_container.container():
                             /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
                             div[data-testid="stRadio"] {
                                 margin-top: -20px !important; 
-                                margin-bottom: -30px !important; 
+                                margin-bottom: -10px !important; 
                                 margin-left: 15px !important;    
                             }
 
@@ -1639,39 +1639,6 @@ with main_container.container():
                             /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
                             div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                                 gap: 1px !important; 
-                            }
-                            
-                            /* =========================================================
-                                📱 모바일 화면 강제 한 줄(Inline) 및 여백 최적화 로직
-                               ========================================================= */
-                            
-                            /* 🚀 5. 모바일 화면에서 컬럼이 밑으로 떨어지지 않고 무조건 한 줄에 유지되도록 반응형 덮어쓰기 */
-                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) {
-                                display: flex !important;
-                                flex-direction: row !important;
-                                flex-wrap: nowrap !important;
-                                gap: 2px !important;
-                            }
-                            
-                            /* 🚀 6. 컬럼이 차지하는 잉여 여백을 없애서 비좁은 모바일 공간 확보 */
-                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) > div[data-testid="column"] {
-                                width: auto !important;
-                                flex: 1 1 0px !important;
-                                min-width: 0 !important;
-                                padding: 0px 2px !important;
-                            }
-
-                            /* 🚀 7. 라디오 버튼(동그라미+글씨) 간격을 최대한 좁히고 두 줄로 꺾이는 현상 절대 방지 */
-                            div[data-testid="stRadio"] > div {
-                                gap: 5px !important; 
-                                flex-wrap: nowrap !important; 
-                            }
-                            
-                            /* 🚀 8. 모바일 화면에 맞춰 텍스트 사이즈와 자간(글씨 간격)을 미세하게 압축 */
-                            div[data-testid="stRadio"] p {
-                                font-size: 13px !important;
-                                letter-spacing: -0.5px !important; 
-                                white-space: nowrap !important;
                             }
                             </style>
                         """, unsafe_allow_html=True)
