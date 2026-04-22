@@ -1585,29 +1585,59 @@ with main_container.container():
                     # 오른쪽: 리스트 뷰
                     with list_col:
                         
-                        # [안전한 해결] 라디오 버튼 시작 위치(상단) 조절 기능 추가
+                        # 🚀 [업데이트] 라디오 버튼 모바일 한 줄 정렬 및 여백 극한 축소
                         st.markdown("""
                             <style>
                             /* 1. 라디오 버튼 위에 숨어있는 투명한 라벨 공간 삭제 */
-                            div.stRadio > label { 
-                                display: none !important; 
-                            }
+                            div.stRadio > label { display: none !important; }
                             
-                            /* 2. [핵심] 라디오 버튼의 위/아래 위치 세밀 조절 */
+                            /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
                             div[data-testid="stRadio"] {
-                                margin-top: -20px !important;    /* 👈 [높이 조절] 이 숫자를 조절해서 지도 상단과 일직선을 맞추세요! (-20px, -40px 등) */
-                                margin-bottom: -10px !important; /* 👈 아래 스크롤 박스와의 간격 조절 */
+                                margin-top: -20px !important; 
+                                margin-bottom: -10px !important; 
                             }
 
                             /* 3. 스크롤 박스 전체를 위로 끌어올리기 */
                             div[data-testid="stScrollableContainer"] {
-                                margin-top: -15px !important;
-                                padding-top: 0px !important;
+                                margin-top: -15px !important; padding-top: 0px !important;
                             }
                             
-                            /* 4. 스크롤 컨테이너 내부 버튼들 사이의 간격 촘촘하게 */
+                            /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
                             div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                                 gap: 1px !important; 
+                            }
+                            
+                            /* =========================================================
+                                📱 모바일 화면 강제 한 줄(Inline) 및 여백 최적화 로직
+                               ========================================================= */
+                            
+                            /* 🚀 5. 모바일 화면에서 컬럼이 밑으로 떨어지지 않고 무조건 한 줄에 유지되도록 반응형 덮어쓰기 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) {
+                                display: flex !important;
+                                flex-direction: row !important;
+                                flex-wrap: nowrap !important;
+                                gap: 2px !important;
+                            }
+                            
+                            /* 🚀 6. 컬럼이 차지하는 잉여 여백을 없애서 비좁은 모바일 공간 확보 */
+                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) > div[data-testid="column"] {
+                                width: auto !important;
+                                flex: 1 1 0px !important;
+                                min-width: 0 !important;
+                                padding: 0px 2px !important;
+                            }
+
+                            /* 🚀 7. 라디오 버튼(동그라미+글씨) 간격을 최대한 좁히고 두 줄로 꺾이는 현상 절대 방지 */
+                            div[data-testid="stRadio"] > div {
+                                gap: 5px !important; 
+                                flex-wrap: nowrap !important; 
+                            }
+                            
+                            /* 🚀 8. 모바일 화면에 맞춰 텍스트 사이즈와 자간(글씨 간격)을 미세하게 압축 */
+                            div[data-testid="stRadio"] p {
+                                font-size: 13px !important;
+                                letter-spacing: -0.5px !important; 
+                                white-space: nowrap !important;
                             }
                             </style>
                         """, unsafe_allow_html=True)
