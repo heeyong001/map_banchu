@@ -1515,8 +1515,8 @@ with main_container.container():
                                     # [수정] 복사하기 텍스트에도 유형(typ) 추가
                                     copy_text_lines.append(f"{r[real_model]} | {cn} | {typ} | {stt} | {tgt}")
                                     
-                                # 1. 기본 복사 텍스트 세팅 (여기까지만 파이썬에서 만듭니다)
-                                copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
+                                # 1. 기본 복사 텍스트 세팅 (파이썬에서 실제 줄바꿈 문자로 변환)
+                                copy_text = "\n".join(copy_text_lines) + "\n\n사용가능할까요?"
 
                                 # 2. HTML 팝업창 렌더링
                                 popup_html = f"""
@@ -1524,28 +1524,42 @@ with main_container.container():
                                     
                                     <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:8px; text-align:center; position:relative;'>
                                         {popup_title}
-                                        <textarea id='base_text_{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
+                                        <textarea id='base_text_{uid}' style='display:none;'>{copy_text}</textarea>
                                         <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
-                                            var base = document.getElementById('base_text_{uid}').value;
-                                            var memo = document.getElementById('memo_{uid}').value.trim();
-                                            var finalTxt = base;
-                                            
-                                            // 메모칸에 입력된 글자가 있으면 '*** 이동합니다' 추가
-                                            if(memo !== '') {{
-                                                finalTxt += '\\n' + memo + ' 이동합니다.';
-                                            }} else {{
-                                                finalTxt += '\\n*** 이동합니다.'; // 빈칸일 때의 기본 형태
+                                            try {{
+                                                var base = document.getElementById('base_text_{uid}').value;
+                                                var memo = document.getElementById('memo_{uid}').value.trim();
+                                                var finalTxt = base;
+                                                
+                                                // 🚀 [해결] 자바스크립트 문법 에러 방지를 위해 이스케이프 처리
+                                                if(memo !== '') {{
+                                                    finalTxt += '\\\\n' + memo + ' 이동합니다.';
+                                                }} else {{
+                                                    finalTxt += '\\\\n*** 이동합니다.';
+                                                }}
+                                                
+                                                var tempTa = document.createElement('textarea');
+                                                tempTa.value = finalTxt;
+                                                
+                                                // 🚀 [해결] 복사 버튼 클릭 시 화면이 위로 튀어오르는 현상 방지
+                                                tempTa.style.position = 'fixed';
+                                                tempTa.style.left = '-9999px';
+                                                
+                                                document.body.appendChild(tempTa);
+                                                tempTa.focus();
+                                                tempTa.select();
+                                                
+                                                var successful = document.execCommand('copy');
+                                                document.body.removeChild(tempTa);
+                                                
+                                                if(successful) {{
+                                                    alert('✅ 목록이 복사되었습니다!\\\\n\\\\n' + finalTxt);
+                                                }} else {{
+                                                    alert('⚠️ 브라우저 보안으로 인해 복사할 수 없습니다.');
+                                                }}
+                                            }} catch(err) {{
+                                                alert('복사 중 에러가 발생했습니다: ' + err);
                                             }}
-                                            
-                                            // 임시 텍스트공간을 만들어 최종 텍스트 복사 후 삭제
-                                            var tempTa = document.createElement('textarea');
-                                            tempTa.value = finalTxt;
-                                            document.body.appendChild(tempTa);
-                                            tempTa.select();
-                                            document.execCommand('copy');
-                                            document.body.removeChild(tempTa);
-                                            
-                                            alert('목록이 복사되었습니다!\\n\\n' + finalTxt);
                                         " title="내용 복사"></i>
                                     </div>
                                     
@@ -1610,7 +1624,7 @@ with main_container.container():
                     # 오른쪽: 리스트 뷰
                     with list_col:
                         
-                        # 🚀 [업데이트] 라디오 버튼 모바일 한 줄 정렬 및 여백 극한 축소
+                        # 🚀 [업데이트] 라디오 버튼 모바일 강제 1줄 CSS 삭제 (모바일 지도 레이아웃 원복)
                         st.markdown("""
                             <style>
                             /* 1. 라디오 버튼 위에 숨어있는 투명한 라벨 공간 삭제 */
@@ -1631,39 +1645,6 @@ with main_container.container():
                             /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
                             div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
                                 gap: 1px !important; 
-                            }
-                            
-                            /* =========================================================
-                                📱 모바일 화면 강제 한 줄(Inline) 및 여백 최적화 로직
-                               ========================================================= */
-                            
-                            /* 🚀 5. 모바일 화면에서 컬럼이 밑으로 떨어지지 않고 무조건 한 줄에 유지되도록 반응형 덮어쓰기 */
-                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) {
-                                display: flex !important;
-                                flex-direction: row !important;
-                                flex-wrap: nowrap !important;
-                                gap: 2px !important;
-                            }
-                            
-                            /* 🚀 6. 컬럼이 차지하는 잉여 여백을 없애서 비좁은 모바일 공간 확보 */
-                            div[data-testid="stHorizontalBlock"]:has(div[data-testid="stRadio"]) > div[data-testid="column"] {
-                                width: auto !important;
-                                flex: 1 1 0px !important;
-                                min-width: 0 !important;
-                                padding: 0px 2px !important;
-                            }
-
-                            /* 🚀 7. 라디오 버튼(동그라미+글씨) 간격을 최대한 좁히고 두 줄로 꺾이는 현상 절대 방지 */
-                            div[data-testid="stRadio"] > div {
-                                gap: 5px !important; 
-                                flex-wrap: nowrap !important; 
-                            }
-                            
-                            /* 🚀 8. 모바일 화면에 맞춰 텍스트 사이즈와 자간(글씨 간격)을 미세하게 압축 */
-                            div[data-testid="stRadio"] p {
-                                font-size: 13px !important;
-                                letter-spacing: -0.5px !important; 
-                                white-space: nowrap !important;
                             }
                             </style>
                         """, unsafe_allow_html=True)
