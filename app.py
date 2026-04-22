@@ -1515,41 +1515,66 @@ with main_container.container():
                                     # [수정] 복사하기 텍스트에도 유형(typ) 추가
                                     copy_text_lines.append(f"{r[real_model]} | {cn} | {typ} | {stt} | {tgt}")
                                     
+                                # 1. 기본 복사 텍스트 세팅 (여기까지만 파이썬에서 만듭니다)
                                 copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
 
+                                # 2. HTML 팝업창 렌더링
                                 popup_html = f"""
-                                <div style='width:100%; min-width:300px; font-family:sans-serif;'>
-                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:3px; text-align:center; position:relative;'>
+                                <div style='width:100%; min-width:280px; max-width:350px; font-family:sans-serif;'>
+                                    
+                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:8px; text-align:center; position:relative;'>
                                         {popup_title}
-                                        <textarea id='{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
+                                        <textarea id='base_text_{uid}' style='display:none; white-space:pre;'>{copy_text}</textarea>
                                         <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
-                                            var ta = document.getElementById('{uid}');
-                                            ta.style.display = 'block';
-                                            ta.select();
+                                            var base = document.getElementById('base_text_{uid}').value;
+                                            var memo = document.getElementById('memo_{uid}').value.trim();
+                                            var finalTxt = base;
+                                            
+                                            // 메모칸에 입력된 글자가 있으면 '*** 이동합니다' 추가
+                                            if(memo !== '') {{
+                                                finalTxt += '\\n' + memo + ' 이동합니다.';
+                                            }} else {{
+                                                finalTxt += '\\n*** 이동합니다.'; // 빈칸일 때의 기본 형태
+                                            }}
+                                            
+                                            // 임시 텍스트공간을 만들어 최종 텍스트 복사 후 삭제
+                                            var tempTa = document.createElement('textarea');
+                                            tempTa.value = finalTxt;
+                                            document.body.appendChild(tempTa);
+                                            tempTa.select();
                                             document.execCommand('copy');
-                                            ta.style.display = 'none';
-                                            alert('목록이 복사되었습니다!');
+                                            document.body.removeChild(tempTa);
+                                            
+                                            alert('목록이 복사되었습니다!\\n\\n' + finalTxt);
                                         " title="내용 복사"></i>
                                     </div>
                                     
-                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         📍 {address_txt}
                                     </div>
+
+                                    <div style='margin-bottom:8px; text-align:center;'>
+                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳을 입력하시면, 클립보드에 복사됩니다' 
+                                               style='width:95%; padding:5px; font-size:11px; border:1px solid #aaa; border-radius:4px; box-sizing:border-box;'>
+                                    </div>
                                     
-                                    <table style='width:100%; border-collapse:collapse; font-size:11px;'>
-                                        <thead>
-                                            <tr style='background-color:#f0f0f0;'>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>유형</th> <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
-                                                <th style='border:1px solid #000; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {t_rows}
-                                        </tbody>
-                                    </table>
+                                    <div style='max-height: 150px; overflow-y: auto; border-bottom: 1px solid #eee;'>
+                                        <table style='width:100%; border-collapse:collapse; font-size:11px;'>
+                                            <thead>
+                                                <tr style='background-color:#f0f0f0; position: sticky; top: 0; z-index: 1;'>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>유형</th> 
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
+                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {t_rows}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                                 """
                                 
