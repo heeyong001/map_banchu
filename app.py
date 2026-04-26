@@ -119,7 +119,7 @@ st.markdown("""
         border: 0 !important;
         height: 2px !important;
         background-color: rgba(212, 175, 55, 0.2) !important; /* 금색에 투명도 20%를 적용하여 배경에 스며들게 함 */
-        margin: 1rem 0 !important;
+        margin: 0.3rem 0 !important; /* 👈 구분선 공간 확보 1rem에서 0.3rem으로 대폭 줄여 공간을 확보합니다 */
     }
 
     /* 2. 전역 텍스트 밝은 색상으로 통일 */
@@ -1160,13 +1160,115 @@ with main_container.container():
             except Exception as e:
                 st.error(f"데이터 로드 오류: {e}")
 
-        # 2. 메인 화면: 상태바
-        if os.path.exists(META_FILE):
-            with open(META_FILE, "r", encoding="utf-8") as f: f_name = f.read()
-            st.markdown(f"<div class='file-status-bar'><span>✅ 저장 완료</span><span>📂 사용 중: <b>{f_name}</b></span></div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='file-status-bar' style='background-color:#fff3e0; color:#ef6c00;'><span>⚠️ <b>파일 없음</b>: 사이드바(>)에서 파일 업로드</span></div>", unsafe_allow_html=True)
+       # 2. 메인 화면: 상태바
+        st.markdown("""
+            <style>
+            /* 1. 부모 가로 블록: 모바일에서도 무조건 1줄(row) 강제 유지 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) {
+                display: flex !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important; /* 👈 절대 줄바꿈 금지 */
+                align-items: center !important; 
+                gap: 5px !important; 
+                margin-bottom: 5px !important;
+            }
+            
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) * { margin: 0 !important; }
+            
+            /* 2. 컬럼 너비 강제 할당 및 높이 35px 고정 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"] {
+                width: auto !important;
+                min-width: 0 !important; /* 👈 내부 텍스트가 팽창하는 것 방어 */
+                padding: 0 !important;
+                height: 35px !important; 
+                display: flex !important;
+                align-items: center !important;
+            }
 
+            /* 3. [왼쪽 상태바 영역] 버튼 크기와 여백을 뺀 나머지 공간 확보 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(1) {
+                flex: 1 1 0% !important;
+                width: calc(100% - 40px) !important; 
+            }
+
+            /* 4. [오른쪽 버튼 영역] 35px 고정 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(2) {
+                flex: 0 0 35px !important; 
+                width: 35px !important;
+                justify-content: flex-end !important;
+            }
+
+            /* 🚀 5. [핵심 해결] 상태바 텍스트 1줄 강제 및 줄임표(...) 처리 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) .file-status-bar {
+                height: 35px !important; 
+                width: 100% !important;
+                display: block !important; /* flex 대신 block으로 텍스트 절단 허용 */
+                line-height: 33px !important; /* 수직 중앙 정렬 보정 */
+                padding: 0 10px !important; 
+                box-sizing: border-box !important;
+                background-color: #182C24 !important; 
+                border: 1px solid #3A5A4A !important; 
+                color: #D4AF37 !important;
+                border-radius: 8px !important; 
+                font-size: 14px !important; 
+                font-weight: bold !important;
+                
+                /* 👇 2줄 꺾임 방지 절대 방어 코드 */
+                white-space: nowrap !important; 
+                overflow: hidden !important;
+                text-overflow: ellipsis !important; 
+            }
+
+            /* 7. 새로고침 버튼 디자인 (흰색 배경 제거 및 골드 테마 적용) */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) button {
+                width: 35px !important;
+                height: 35px !important;
+                min-height: 35px !important;
+                padding: 0 !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                font-size: 16px !important; 
+                border-radius: 8px !important; 
+                box-sizing: border-box !important;
+
+                /* 🚀 추가된 색상 코드 */
+                background-color: #000000 !important; /* 배경을 검정색으로 고정 */
+                color: #D4AF37 !important;           /* 아이콘(화살표)을 금색으로 */
+                border: 1px solid #D4AF37 !important; /* 테두리를 금색으로 */
+            }
+
+            /* 마우스 올렸을 때(Hover) 효과 추가 */
+            div[data-testid="stHorizontalBlock"]:has(.status-marker) button:hover {
+                background-color: #1a1a1a !important;
+                border-color: #FCECA1 !important;
+                color: #FCECA1 !important;
+            }
+
+            /* 8. 모바일 폰트 크기 미세 조절 */
+            @media (max-width: 400px) {
+                div[data-testid="stHorizontalBlock"]:has(.status-marker) .file-status-bar {
+                    font-size: 12px !important;
+                    padding: 0 6px !important;
+                }
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        status_col, refresh_col = st.columns([9.5, 0.5])
+        
+        with status_col:
+            if os.path.exists(META_FILE):
+                with open(META_FILE, "r", encoding="utf-8") as f: f_name = f.read()
+                st.markdown(f"<span class='status-marker' style='display:none;'></span><div class='file-status-bar'><span>✅ 저장 완료</span>&nbsp;&nbsp;<span>📂 <b>{f_name}</b></span></div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<span class='status-marker' style='display:none;'></span><div class='file-status-bar' style='background-color:#fff3e0 !important; color:#ef6c00 !important; border-color:#ef6c00 !important;'><span>⚠️ 파일 없음</span></div>", unsafe_allow_html=True)
+                
+        with refresh_col:
+            if st.button("🔄", help="새로고침", use_container_width=True):
+                st.cache_data.clear()
+                st.rerun()
+        
         if df is not None:
             # 컬럼 매핑
             col_map = {}
@@ -1247,7 +1349,6 @@ with main_container.container():
                         all_dae.remove("강원")
                         all_dae.append("강원")
                         
-                    # [수정] 사무실 전용 버튼 대분류에 추가
                     if "사무실(반추정보통신)" not in all_dae:
                         all_dae.insert(0, "사무실(반추정보통신)")
                         
@@ -1255,7 +1356,6 @@ with main_container.container():
                     
                 with c_region_so:
                     if selected_dae:
-                        # 사무실 필터링 스마트 처리 
                         actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
                         mask_so = df['대분류_캐시'].isin(actual_dae)
                         if "사무실(반추정보통신)" in selected_dae:
@@ -1266,10 +1366,8 @@ with main_container.container():
                         
                     raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
                     
-                    # [핵심 최적화 구간] 반복문 내의 무거운 필터링을 제거하고 100배 빠른 딕셔너리 매핑으로 교체
                     so_priority = {}
                     if '사업장주소' in so_options_df.columns:
-                        # 중복을 제거하고 소분류별 첫 번째 주소만 남겨 '사전'으로 만듭니다.
                         valid_df = so_options_df.dropna(subset=['사업장주소']).drop_duplicates(subset=['소분류_캐시'])
                         addr_map = dict(zip(valid_df['소분류_캐시'], valid_df['사업장주소']))
                         
@@ -1287,7 +1385,6 @@ with main_container.container():
                             
                     all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
                     
-                    # [추가] 소분류 목록에 '집단상가'를 강제로 추가
                     if "집단상가" not in all_so:
                         all_so.insert(0, "집단상가")
                         
@@ -1321,38 +1418,48 @@ with main_container.container():
                     all_owners = st.session_state.get('_owner_cache_list', [])
                     selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
-                st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
-                
-                if st.button("🚀 조회하기", use_container_width=True):
-                    is_specific_owner = bool(selected_owners)
-                    if not selected_models and not is_specific_owner:
-                        st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
-                        
-                        # 🚀 [핵심 추가] 검색 조건이 초기화/부족할 때, 이전 검색 결과(지도 및 리스트)를 화면에서 완전히 지워버림!
-                        st.session_state['filtered_data'] = None 
-                        
-                    else:
-                        st.session_state['search_clicked'] = True
-                        # ... 이하 검색 로직 ...
-                        
-                        # 🚀 [핵심 캐싱 적용] 튜플 형태로 넘겨서 동일한 조합은 즉시 로딩되도록 함
-                        list_res, map_res = get_cached_search_results(
-                            df, 
-                            tuple(selected_models), 
-                            tuple(selected_colors) if selected_colors else tuple(), 
-                            tuple(selected_owners) if selected_owners else tuple(), 
-                            tuple(selected_dae) if selected_dae else tuple(), 
-                            tuple(selected_so) if selected_so else tuple(),
-                            real_model, real_color, real_boyu
-                        )
-                        
-                        st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
-                        st.session_state['selected_idx'] = None
-                        st.session_state['clicked_store_name'] = None
-                        st.rerun()
+                # 🚀 [핵심 추가] Fragment 밖의 버튼이 쓸 수 있도록 세션에 최신 상태 저장
+                st.session_state['tmp_selected_models'] = selected_models
+                st.session_state['tmp_selected_colors'] = selected_colors
+                st.session_state['tmp_selected_dae'] = selected_dae
+                st.session_state['tmp_selected_so'] = selected_so
+                st.session_state['tmp_selected_owners'] = selected_owners
 
-            # 🚀 [추가] 묶어둔 검색창 함수를 여기서 실행합니다.
+            # 🚀 검색창(드롭다운) 영역만 독립 실행
             search_filter_section()            
+
+            # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
+            st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
+            
+            if st.button("🚀 조회하기", use_container_width=True):
+                # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
+                s_models = st.session_state.get('tmp_selected_models', [])
+                s_colors = st.session_state.get('tmp_selected_colors', [])
+                s_dae = st.session_state.get('tmp_selected_dae', [])
+                s_so = st.session_state.get('tmp_selected_so', [])
+                s_owners = st.session_state.get('tmp_selected_owners', [])
+
+                is_specific_owner = bool(s_owners)
+                if not s_models and not is_specific_owner:
+                    st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
+                    st.session_state['filtered_data'] = None 
+                else:
+                    st.session_state['search_clicked'] = True
+                    
+                    list_res, map_res = get_cached_search_results(
+                        df, 
+                        tuple(s_models), 
+                        tuple(s_colors) if s_colors else tuple(), 
+                        tuple(s_owners) if s_owners else tuple(), 
+                        tuple(s_dae) if s_dae else tuple(), 
+                        tuple(s_so) if s_so else tuple(),
+                        real_model, real_color, real_boyu
+                    )
+                    
+                    st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
+                    st.session_state['selected_idx'] = None
+                    st.session_state['clicked_store_name'] = None
+                    # 💡 버튼이 Fragment 밖에 있으므로 더 이상 st.rerun() 이중 새로고침이 필요 없습니다. (실행 속도 향상!)    
 
             # 4. 결과 출력
             if st.session_state['filtered_data'] is not None:
