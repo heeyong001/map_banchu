@@ -103,6 +103,12 @@ st.set_page_config(layout="wide", page_title="재고 현황 대시보드", initi
 # ==============================================================================
 st.markdown("""
     <style>
+    /* 🚀 [추가] 모바일 가로 스크롤(화면 넘어감) 완벽 차단 */
+    html, body, [data-testid="stAppViewContainer"], .block-container {
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+    }
+            
     /* 1. 전역 다크 그린 격자 배경 */
     .stApp {
         background-color: #122820 !important;
@@ -119,7 +125,7 @@ st.markdown("""
         border: 0 !important;
         height: 2px !important;
         background-color: rgba(212, 175, 55, 0.2) !important; /* 금색에 투명도 20%를 적용하여 배경에 스며들게 함 */
-        margin: 0.3rem 0 !important; /* 👈 구분선 공간 확보 1rem에서 0.3rem으로 대폭 줄여 공간을 확보합니다 */
+        margin: 0px 0px 10px 0px !important; /* 👈 위쪽 여백 삭제, 아래 여백만 10px 남김 */
     }
 
     /* 2. 전역 텍스트 밝은 색상으로 통일 */
@@ -1165,12 +1171,15 @@ with main_container.container():
             <style>
             /* 1. 부모 가로 블록: 모바일에서도 무조건 1줄(row) 강제 유지 */
             div[data-testid="stHorizontalBlock"]:has(.status-marker) {
-                display: flex !important;
-                flex-direction: row !important;
-                flex-wrap: nowrap !important; /* 👈 절대 줄바꿈 금지 */
-                align-items: center !important; 
-                gap: 5px !important; 
-                margin-bottom: 5px !important;
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important; 
+            align-items: center !important; 
+            gap: 8px !important; 
+            margin-bottom: 0px !important;
+            max-width: 100% !important;
+            padding-right: 20px !important; /* 👈 [핵심] 우측 여백을 3배로 늘려서 버튼을 왼쪽으로 쑥 밀어냅니다! */
+            box-sizing: border-box !important;
             }
             
             div[data-testid="stHorizontalBlock"]:has(.status-marker) * { margin: 0 !important; }
@@ -1187,15 +1196,17 @@ with main_container.container():
 
             /* 3. [왼쪽 상태바 영역] 버튼 크기와 여백을 뺀 나머지 공간 확보 */
             div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(1) {
-                flex: 1 1 0% !important;
-                width: calc(100% - 40px) !important; 
+                flex: 1 1 0px !important;  /* 👈 [수정] 빈 공간에서 시작해서 남는 공간만 채우도록 지시 */
+                width: 0px !important;     /* 👈 [수정] 억지로 팽창하는 것을 차단 */
+                overflow: hidden !important; /* 👈 내부 텍스트가 박스를 밀어내는 것 방어 */
             }
 
             /* 4. [오른쪽 버튼 영역] 35px 고정 */
             div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(2) {
                 flex: 0 0 35px !important; 
                 width: 35px !important;
-                justify-content: flex-end !important;
+                justify-content: center !important;   /* 👈 [수정] 칸의 중앙에 배치하여 시작점을 안쪽으로 당김 */
+                
             }
 
             /* 🚀 5. [핵심 해결] 상태바 텍스트 1줄 강제 및 줄임표(...) 처리 */
