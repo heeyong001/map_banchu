@@ -1,9 +1,5 @@
 import streamlit as st
 import pandas as pd
-import folium
-from folium.features import DivIcon
-from streamlit_folium import st_folium
-from branca.element import Element  
 import random
 import os
 import hashlib
@@ -441,7 +437,7 @@ if not st.session_state['logged_in']:
     saved_token = cookie_controller.get('auth_token')
     if saved_token:
         try:
-            users_df = load_sheet("users", ttl="10m")
+            users_df = load_sheet("users", ttl="1h")
             if not users_df.empty:
                 matched_user = users_df[users_df['password'] == saved_token]
                 if not matched_user.empty:
@@ -1472,8 +1468,11 @@ with main_container.container():
                     st.session_state['clicked_store_name'] = None
                     # 💡 버튼이 Fragment 밖에 있으므로 더 이상 st.rerun() 이중 새로고침이 필요 없습니다. (실행 속도 향상!)    
 
-            # 4. 결과 출력
-            if st.session_state['filtered_data'] is not None:
+        # 4. 결과 출력
+        # 🚀 [최적화 2] 결과 화면(지도+리스트)을 독립된 구역(Fragment)으로 분리
+        @st.fragment
+        def display_results_section():
+            if st.session_state.get('filtered_data') is not None:
                 data = st.session_state['filtered_data']
                 list_df = data['list']
                 map_df = data['map']
@@ -1511,7 +1510,13 @@ with main_container.container():
 
                             c_lat = (min_lat + max_lat) / 2.0
                             c_lon = (min_lon + max_lon) / 2.0
-                            
+
+                            # 🚀 [최적화 1] 지도를 그리기 직전에만 무거운 모듈을 불러옵니다 (Lazy Import)
+                            import folium
+                            from folium.features import DivIcon
+                            from streamlit_folium import st_folium
+                            from branca.element import Element 
+                          
                             # 1. 안전한 기본 지도 생성
                             m = folium.Map(location=[c_lat, c_lon], zoom_start=10, attributionControl=False)
                             m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
@@ -1809,7 +1814,8 @@ with main_container.container():
                                 if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
                                     st.session_state['selected_idx'] = idx
                                     st.session_state['clicked_store_name'] = str(row[real_boyu])
-                                    st.rerun()
-
+                                    
                 else:
                     st.warning("조건에 맞는 결과가 없습니다.")
+
+        display_results_section()       
