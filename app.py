@@ -1075,7 +1075,7 @@ with main_container.container():
             elif '레드' in c: return '#FF0000', '#FFFFFF' 
             return '#3388ff', '#000000'
 
-        @st.cache_data(ttl="10m")
+        @st.cache_data(ttl="12h", show_spinner=False)
         def load_data_optimized(file):
             # 1. 엑셀 데이터 로드
             if isinstance(file, str): df = pd.read_excel(file, dtype=str)
@@ -1173,7 +1173,9 @@ with main_container.container():
         df = None
         if os.path.exists(DATA_FILE):
             try: 
-                df = load_data_optimized(DATA_FILE)
+                # 🚀 [개선] 중앙에 예쁜 로딩 바를 띄워서 사용자가 데이터 최적화 중임을 알 수 있게 합니다.
+                with st.spinner("📊 재고표를 데이터를 대시보드에 맞게 최적화 중입니다... (최초 로딩 시 잠시만 기다려주세요)"):
+                    df = load_data_optimized(DATA_FILE)
             except Exception as e:
                 st.error(f"데이터 로드 오류: {e}")
 
