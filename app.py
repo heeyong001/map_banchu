@@ -434,20 +434,18 @@ if 'logged_in' not in st.session_state:
 
 # 2. 브라우저 재시작 시 쿠키 복구 로직 (완벽한 로그인 유지)
 if not st.session_state['logged_in']:
+    # 🚀 3개의 쿠키를 모두 불러옵니다.
     saved_token = cookie_controller.get('auth_token')
-    if saved_token:
-        try:
-            users_df = load_sheet("users", ttl="1h")
-            if not users_df.empty:
-                matched_user = users_df[users_df['password'] == saved_token]
-                if not matched_user.empty:
-                    user_data = matched_user.iloc[0]
-                    st.session_state['logged_in'] = True
-                    st.session_state['username'] = user_data['username']
-                    st.session_state['role'] = user_data['role']
-                    st.rerun()
-        except:
-            pass
+    saved_user = cookie_controller.get('auth_user')
+    saved_role = cookie_controller.get('auth_role')
+    
+    # 3개가 모두 존재한다면, 구글 시트 확인 없이 즉시 로그인 처리!
+    if saved_token and saved_user and saved_role:
+        st.session_state['logged_in'] = True
+        st.session_state['username'] = saved_user
+        st.session_state['role'] = saved_role
+        # 💡 st.rerun()이 없으므로 화면이 깜빡이지 않고 자연스럽게 다음 코드로 넘어갑니다.
+
 
 # --- 대시보드 상태 변수 유지 ---
 if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
@@ -529,11 +527,13 @@ if not st.session_state['logged_in']:
                         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
 
-                        # 브라우저 쿠키에 해시 토큰 굽기 (유지 시간을 한국 시간 다음날 00시까지로 정확히 설정)
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight) 
+                        # 🚀 [개선] 쿠키에 아이디와 권한을 함께 저장하여 '재접속 시 통신'을 없앱니다.
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight)
+                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight)
+                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight) 
                         
-                        # 에러 없이 0.5초 대기 후 정상 작동
-                        time.sleep(0.5) 
+                        # 에러 없이 0.1초 대기 후 정상 작동
+                        time.sleep(0.1) 
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
@@ -546,8 +546,11 @@ with st.sidebar:
         st.session_state.clear()
         st.query_params.clear()
         
-        # 🚀 [핵심 수정] 기존 HTML 방식 대신 공식 컨트롤러로 쿠키 삭제 후 0.5초 대기
+        # 🚀 [수정됨] 저장했던 3개의 쿠키를 모두 삭제합니다.
         cookie_controller.remove('auth_token')
+        cookie_controller.remove('auth_user')
+        cookie_controller.remove('auth_role')
+
         time.sleep(0.5) 
         
         st.rerun()
