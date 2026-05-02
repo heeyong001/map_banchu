@@ -431,6 +431,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
+    st.session_state['cold_start_check'] = True # 🚀 [추가] 처음 켜졌는지 확인하는 장치
 
 # 2. 브라우저 재시작 시 쿠키 복구 로직 (완벽한 로그인 유지)
 if not st.session_state['logged_in']:
@@ -480,6 +481,17 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # [2단계] 로그인 화면 및 화면 라우팅
 # ==============================================================================
 if not st.session_state['logged_in']:
+    
+    # 🚀 [핵심 개선] 브라우저 강제 종료 후 돌아왔을 때 로그인 창이 번쩍이는 현상 방지
+    if st.session_state.get('cold_start_check', False):
+        st.session_state['cold_start_check'] = False # 다시 실행되지 않도록 차단
+        
+        # 성급하게 로그인 폼을 그리지 않고, 중앙에 우아한 확인 문구를 띄웁니다.
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 자동 로그인 정보를 확인하고 있습니다...</h3><p style='color:#728A7C;'>잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        
+        time.sleep(0.6) # 💡 브라우저가 파이썬으로 쿠키를 전송할 수 있도록 0.6초의 시간을 벌어줍니다.
+        st.rerun()      # 0.6초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
+
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
