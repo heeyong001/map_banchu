@@ -1610,7 +1610,7 @@ with main_container.container():
                                     border_style = "border-radius: 10%; border: 2px solid white;"
 
                                 t_rows = ""
-                                td_style = "border:1px solid #000; padding:5px; text-align:center;"
+                                td_style = "border:1px solid #aaa; padding:5px; text-align:center;"
                                 
                                 uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
                                 popup_title = f"{name}"
