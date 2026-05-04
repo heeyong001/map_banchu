@@ -431,7 +431,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
-    # 🚀 cold_start_check 대신 횟수 기반 카운터 사용
+    # 🚀 처음 접속 시 쿠키를 기다려줄 카운터 초기화
     if 'cookie_wait_count' not in st.session_state:
         st.session_state['cookie_wait_count'] = 0
 
@@ -485,7 +485,7 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 if not st.session_state['logged_in']:
     
     # 🚀 [모바일 완벽 방어] 쿠키가 아직 도착 안 했을 가능성을 고려해 최대 2번(약 1초) 재시도합니다.
-    if st.session_state['cookie_wait_count'] < 2:
+    if st.session_state['cookie_wait_count'] < 3:
         st.session_state['cookie_wait_count'] += 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
@@ -544,7 +544,7 @@ if not st.session_state['logged_in']:
                         
                         # 🚀 성공했으므로 확인 카운트를 완료 상태(99)로 변경
                         st.session_state['cookie_wait_count'] = 99
-                        time.sleep(0.5) # 1.5초는 너무 깁니다. 0.5초면 충분합니다.
+                        time.sleep(0.1) # 1.5초는 너무 깁니다. 0.5초면 충분합니다.
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
