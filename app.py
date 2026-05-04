@@ -497,7 +497,7 @@ if not st.session_state['logged_in']:
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
     # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
-    if current_wait_count < 1:
+    if current_wait_count < 2:
         # 카운터를 1 증가시켜서 세션에 다시 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
@@ -510,7 +510,7 @@ if not st.session_state['logged_in']:
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.stop()      # 0.5초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
+        st.stop()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
@@ -560,9 +560,9 @@ if not st.session_state['logged_in']:
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
 
                         # 🚀 [개선] 쿠키에 아이디와 권한을 함께 저장하여 '재접속 시 통신'을 없앱니다.
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight)
-                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight)
-                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight) 
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
 
                         # 🚀 [추가] URL 주소창에도 정보를 몰래 백업해 둡니다! (비밀번호는 빼고)
                         st.query_params["auth_user"] = username
