@@ -497,7 +497,7 @@ if not st.session_state['logged_in']:
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
     # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
-    if current_wait_count < 2:
+    if current_wait_count < 1:
         # 카운터를 1 증가시켜서 세션에 다시 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
@@ -510,6 +510,7 @@ if not st.session_state['logged_in']:
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
+        time.sleep(0.5)
         st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
