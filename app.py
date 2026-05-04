@@ -422,7 +422,7 @@ def make_session_token(password_hash):
     return hashlib.sha256((password_hash + today).encode()).hexdigest()
 
 # ==============================================================================
-# [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (Cookie 방식 적용)
+# [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (오직 순수 Cookie 방식)
 # ==============================================================================
 cookie_controller = CookieController()
 
@@ -431,13 +431,22 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
+    st.session_state['cold_start_check'] = True # 🚀 원본의 단 1회 대기 로직 복구
 
-# 🚀 [추가] 2. 가장 확실하고 빠른 URL 파라미터로 즉시 복구 시도
-query_params = st.query_params
-if "auth_user" in query_params and "auth_role" in query_params:
-    st.session_state['logged_in'] = True
-    st.session_state['username'] = query_params["auth_user"]
-    st.session_state['role'] = query_params["auth_role"]
+# 2. 쿠키로 복구 (URL 편법 모두 폐기)
+if not st.session_state['logged_in']:
+    try:
+        saved_token = cookie_controller.get('auth_token')
+        saved_user = cookie_controller.get('auth_user')
+        saved_role = cookie_controller.get('auth_role')
+    except Exception: # 🚀 기존에 발생했던 TypeError 완벽 방어
+        saved_token, saved_user, saved_role = None, None, None
+    
+    if saved_token and saved_user and saved_role:
+        st.session_state['logged_in'] = True
+        st.session_state['username'] = saved_user
+        st.session_state['role'] = saved_role
+        # 💡 쿠키가 있으면 딜레이 없이 즉시 대시보드로 넘어갑니다.
 
 # --- 대시보드 상태 변수 유지 ---
 if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
@@ -473,13 +482,16 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [오류 완벽 해결] 마크다운 착각을 막기 위해 띄어쓰기와 주석을 제거한 '단일 줄' 문자열을 사용합니다!
-    js_code = '<img src="error.png" style="display:none;" onerror="if(!window.location.search.includes(\'auth_user\')){let user=localStorage.getItem(\'banchu_auth_user\');let role=localStorage.getItem(\'banchu_auth_role\');let expire=localStorage.getItem(\'banchu_expire\');if(user&&role&&expire){if(Date.now()<parseInt(expire)){let url=new URL(window.location.href);url.searchParams.set(\'auth_user\',user);url.searchParams.set(\'auth_role\',role);window.parent.location.replace(url.toString());}else{localStorage.removeItem(\'banchu_auth_user\');localStorage.removeItem(\'banchu_auth_role\');localStorage.removeItem(\'banchu_expire\');}}}">'
-    st.markdown(js_code, unsafe_allow_html=True)
+    # 🚀 [속도 최적화 복구] 무한 로딩이나 JS 없이, 처음 켜졌을 때 딱 1번만 0.5초 기다려줍니다.
+    if st.session_state.get('cold_start_check', False):
+        st.session_state['cold_start_check'] = False
+        
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 안전하게 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
+        time.sleep(0.5)
+        st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
-    
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
@@ -517,19 +529,22 @@ if not st.session_state['logged_in']:
                         # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
                         add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
                         
-                        # 🚀 [완벽 해결] 로그인 성공 시 영구 금고 저장 로직 압축 버젼
-                        success_js = f'<img src="error.png" style="display:none;" onerror="let now=new Date();let midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,0);localStorage.setItem(\'banchu_auth_user\',\'{username}\');localStorage.setItem(\'banchu_auth_role\',\'{user_match.iloc[0]["role"]}\');localStorage.setItem(\'banchu_expire\',midnight.getTime().toString());let url=new URL(window.location.href);url.searchParams.set(\'auth_user\',\'{username}\');url.searchParams.set(\'auth_role\',\'{user_match.iloc[0]["role"]}\');window.parent.location.replace(url.toString());">'
-                        st.markdown(success_js, unsafe_allow_html=True)
+                        # (자정 시간 계산 코드는 그대로 유지)
+                        KST = timezone(timedelta(hours=9))
+                        now = datetime.now(KST)
+                        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        seconds_until_midnight = int((next_midnight - now).total_seconds())
+
+                        # 🚀 [로그인 유지 핵심] path='/'를 추가하여 브라우저 종료 시 쿠키 증발을 막습니다!
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        # 💡 브라우저가 위 JS 코드를 무사히 전송받을 수 있도록 0.5초만 숨을 고른 뒤 멈춥니다!
-                        time.sleep(0.5) 
-                        st.stop()
-                        
-                        # 💡 [핵심] 브라우저가 위 JS 코드를 무사히 전송받을 수 있도록 0.5초만 숨을 고른 뒤 멈춥니다!
-                        time.sleep(0.5) 
-                        st.stop()
+                        time.sleep(0.1) 
+                        st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
+    st.stop()
     st.stop()
 
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
@@ -538,11 +553,12 @@ with st.sidebar:
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
         
-        # 🚀 로그아웃 시 영구 보관함 비우기 로직 압축 버젼
-        logout_js = '<img src="error.png" style="display:none;" onerror="localStorage.removeItem(\'banchu_auth_user\');localStorage.removeItem(\'banchu_auth_role\');localStorage.removeItem(\'banchu_expire\');window.parent.location.href=window.parent.location.pathname;">'
-        st.markdown(logout_js, unsafe_allow_html=True)
+        cookie_controller.remove('auth_token')
+        cookie_controller.remove('auth_user')
+        cookie_controller.remove('auth_role')
+
         time.sleep(0.5) 
-        st.stop()
+        st.rerun()
 
     menu = ["📊 대시보드"]
     # 관리자 권한(admin)일 때만 관리자 설정 메뉴가 보입니다.
