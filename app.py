@@ -497,15 +497,20 @@ if not st.session_state['logged_in']:
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
     # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
-    if current_wait_count < 2:
+    if current_wait_count < 1:
         # 카운터를 1 증가시켜서 세션에 다시 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         # 성급하게 로그인 폼을 그리지 않고, 중앙에 우아한 확인 문구를 띄웁니다.
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 자동 로그인 정보를 확인하고 있습니다...</h3><p style='color:#728A7C;'>잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        time.sleep(0.5) # 💡 브라우저가 파이썬으로 쿠키를 전송할 수 있도록 0.5초의 시간을 벌어줍니다.
-        st.rerun()      # 0.5초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
+        # 💡 만약을 대비한 수동 새로고침 버튼 (보통은 누르기 전에 자동 복구됩니다)
+        st.markdown("<div style='text-align:center; margin-top:20px;'>", unsafe_allow_html=True)
+        if st.button("⏳ 화면이 멈춰있다면 여기를 클릭하세요"):
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.stop()      # 0.5초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
