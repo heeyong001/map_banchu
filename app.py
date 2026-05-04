@@ -473,30 +473,28 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [최종 진화형] 모바일에서 증발하는 쿠키 대신, 영구 저장소(localStorage)를 0.001초 만에 확인합니다!
+    # 🚀 [최종 진화형] React 보안 정책을 뚫고 100% 실행되는 '이미지 에러(onerror)' 우회 기법 적용!
     js_code = """
-    <script>
-    if (!window.parent.location.search.includes('auth_user')) {
-        let user = window.parent.localStorage.getItem('banchu_auth_user');
-        let role = window.parent.localStorage.getItem('banchu_auth_role');
-        let expire = window.parent.localStorage.getItem('banchu_expire');
-        
-        if (user && role && expire) {
-            // 현재 시간이 만료 시간(자정) 이전인지 확인
-            if (Date.now() < parseInt(expire)) {
-                let url = new URL(window.parent.location.href);
-                url.searchParams.set('auth_user', user);
-                url.searchParams.set('auth_role', role);
-                window.parent.location.replace(url.toString()); // 빛의 속도로 대시보드 강제 이동
-            } else {
-                // 자정이 지났다면 보관함 깔끔하게 비우기
-                window.parent.localStorage.removeItem('banchu_auth_user');
-                window.parent.localStorage.removeItem('banchu_auth_role');
-                window.parent.localStorage.removeItem('banchu_expire');
+    <img src="error.png" style="display:none;" onerror="
+        if (!window.parent.location.search.includes('auth_user')) {
+            let user = window.parent.localStorage.getItem('banchu_auth_user');
+            let role = window.parent.localStorage.getItem('banchu_auth_role');
+            let expire = window.parent.localStorage.getItem('banchu_expire');
+            
+            if (user && role && expire) {
+                if (Date.now() < parseInt(expire)) {
+                    let url = new URL(window.parent.location.href);
+                    url.searchParams.set('auth_user', user);
+                    url.searchParams.set('auth_role', role);
+                    window.parent.location.replace(url.toString()); // 빛의 속도로 대시보드 강제 이동
+                } else {
+                    window.parent.localStorage.removeItem('banchu_auth_user');
+                    window.parent.localStorage.removeItem('banchu_auth_role');
+                    window.parent.localStorage.removeItem('banchu_expire');
+                }
             }
         }
-    }
-    </script>
+    ">
     """
     st.markdown(js_code, unsafe_allow_html=True)
 
@@ -539,26 +537,24 @@ if not st.session_state['logged_in']:
                         # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
                         add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
                         
-                        # 🚀 [완벽 해결] 느려터진 파이썬 쿠키 대신 JS를 시켜 영구 보관함에 정보를 쾅! 박아버립니다.
+                        # 🚀 [완벽 해결] 로그인 성공 시 영구 금고에 정보를 단단하게 저장하고 즉시 새로고침!
                         success_js = f"""
-                        <script>
-                        // 자정(00시) 만료 시간 계산
-                        let now = new Date();
-                        let midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-                        
-                        window.parent.localStorage.setItem('banchu_auth_user', '{username}');
-                        window.parent.localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
-                        window.parent.localStorage.setItem('banchu_expire', midnight.getTime().toString());
-                        
-                        // JS가 저장 완료 후 스스로 대시보드로 새로고침!
-                        let url = new URL(window.parent.location.href);
-                        url.searchParams.set('auth_user', '{username}');
-                        url.searchParams.set('auth_role', '{user_match.iloc[0]['role']}');
-                        window.parent.location.replace(url.toString());
-                        </script>
+                        <img src="error.png" style="display:none;" onerror="
+                            let now = new Date();
+                            let midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+                            
+                            window.parent.localStorage.setItem('banchu_auth_user', '{username}');
+                            window.parent.localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
+                            window.parent.localStorage.setItem('banchu_expire', midnight.getTime().toString());
+                            
+                            let url = new URL(window.parent.location.href);
+                            url.searchParams.set('auth_user', '{username}');
+                            url.searchParams.set('auth_role', '{user_match.iloc[0]['role']}');
+                            window.parent.location.replace(url.toString());
+                        ">
                         """
                         st.markdown(success_js, unsafe_allow_html=True)
-                        st.stop() # 👈 [핵심] st.rerun()을 막고 JS가 화면 이동을 완전히 책임지도록 파이썬을 멈춥니다!
+                        st.stop() # 👈 [핵심] 파이썬을 즉시 멈춰서 화면이 즉각적으로 전환되도록 합니다.
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
     st.stop()
@@ -569,14 +565,14 @@ with st.sidebar:
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
         
-        # 🚀 JS를 호출하여 영구 보관함을 깔끔하게 비우고 메인으로 돌아갑니다.
+        # 🚀 로그아웃 시 영구 보관함을 깔끔하게 비웁니다.
         logout_js = """
-        <script>
-        window.parent.localStorage.removeItem('banchu_auth_user');
-        window.parent.localStorage.removeItem('banchu_auth_role');
-        window.parent.localStorage.removeItem('banchu_expire');
-        window.parent.location.href = window.parent.location.pathname;
-        </script>
+        <img src="error.png" style="display:none;" onerror="
+            window.parent.localStorage.removeItem('banchu_auth_user');
+            window.parent.localStorage.removeItem('banchu_auth_role');
+            window.parent.localStorage.removeItem('banchu_expire');
+            window.parent.location.href = window.parent.location.pathname;
+        ">
         """
         st.markdown(logout_js, unsafe_allow_html=True)
         st.stop()
