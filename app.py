@@ -487,7 +487,7 @@ if not st.session_state['logged_in']:
         st.session_state['cold_start_check'] = False
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 안전하게 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
-        time.sleep(1.5)
+        time.sleep(0.5)
         st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
@@ -540,11 +540,10 @@ if not st.session_state['logged_in']:
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        time.sleep(1.5) 
+                        time.sleep(0.5) 
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
-    st.stop()
     st.stop()
 
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
@@ -557,7 +556,7 @@ with st.sidebar:
         cookie_controller.remove('auth_user')
         cookie_controller.remove('auth_role')
 
-        time.sleep(1.5) 
+        time.sleep(0.5) 
         st.rerun()
 
     menu = ["📊 대시보드"]
