@@ -473,24 +473,26 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [최종 진화형] React 보안 정책을 뚫고 100% 실행되는 '이미지 에러(onerror)' 우회 기법 적용!
+    # 🚀 [최종 진화형] React 보안 정책 및 CORS(크로스 도메인) 보안을 모두 뚫어내는 무적의 코드!
     js_code = """
     <img src="error.png" style="display:none;" onerror="
-        if (!window.parent.location.search.includes('auth_user')) {
-            let user = window.parent.localStorage.getItem('banchu_auth_user');
-            let role = window.parent.localStorage.getItem('banchu_auth_role');
-            let expire = window.parent.localStorage.getItem('banchu_expire');
+        // 1. window.parent 대신 iframe 자체의 url과 localStorage를 사용하여 보안 에러를 피합니다.
+        if (!window.location.search.includes('auth_user')) {
+            let user = localStorage.getItem('banchu_auth_user');
+            let role = localStorage.getItem('banchu_auth_role');
+            let expire = localStorage.getItem('banchu_expire');
             
             if (user && role && expire) {
                 if (Date.now() < parseInt(expire)) {
-                    let url = new URL(window.parent.location.href);
+                    let url = new URL(window.location.href);
                     url.searchParams.set('auth_user', user);
                     url.searchParams.set('auth_role', role);
-                    window.parent.location.replace(url.toString()); // 빛의 속도로 대시보드 강제 이동
+                    // 2. 화면 이동은 최상단 부모 창을 이동시킵니다.
+                    window.parent.location.replace(url.toString()); 
                 } else {
-                    window.parent.localStorage.removeItem('banchu_auth_user');
-                    window.parent.localStorage.removeItem('banchu_auth_role');
-                    window.parent.localStorage.removeItem('banchu_expire');
+                    localStorage.removeItem('banchu_auth_user');
+                    localStorage.removeItem('banchu_auth_role');
+                    localStorage.removeItem('banchu_expire');
                 }
             }
         }
@@ -543,18 +545,21 @@ if not st.session_state['logged_in']:
                             let now = new Date();
                             let midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
                             
-                            window.parent.localStorage.setItem('banchu_auth_user', '{username}');
-                            window.parent.localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
-                            window.parent.localStorage.setItem('banchu_expire', midnight.getTime().toString());
+                            localStorage.setItem('banchu_auth_user', '{username}');
+                            localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
+                            localStorage.setItem('banchu_expire', midnight.getTime().toString());
                             
-                            let url = new URL(window.parent.location.href);
+                            let url = new URL(window.location.href);
                             url.searchParams.set('auth_user', '{username}');
                             url.searchParams.set('auth_role', '{user_match.iloc[0]['role']}');
                             window.parent.location.replace(url.toString());
                         ">
                         """
                         st.markdown(success_js, unsafe_allow_html=True)
-                        st.stop() # 👈 [핵심] 파이썬을 즉시 멈춰서 화면이 즉각적으로 전환되도록 합니다.
+                        
+                        # 💡 [핵심] 브라우저가 위 JS 코드를 무사히 전송받을 수 있도록 0.5초만 숨을 고른 뒤 멈춥니다!
+                        time.sleep(0.5) 
+                        st.stop()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
     st.stop()
@@ -568,13 +573,14 @@ with st.sidebar:
         # 🚀 로그아웃 시 영구 보관함을 깔끔하게 비웁니다.
         logout_js = """
         <img src="error.png" style="display:none;" onerror="
-            window.parent.localStorage.removeItem('banchu_auth_user');
-            window.parent.localStorage.removeItem('banchu_auth_role');
-            window.parent.localStorage.removeItem('banchu_expire');
+            localStorage.removeItem('banchu_auth_user');
+            localStorage.removeItem('banchu_auth_role');
+            localStorage.removeItem('banchu_expire');
             window.parent.location.href = window.parent.location.pathname;
         ">
         """
         st.markdown(logout_js, unsafe_allow_html=True)
+        time.sleep(0.5) # 💡 여기도 브라우저가 명령을 받을 시간을 줍니다.
         st.stop()
 
     menu = ["📊 대시보드"]
