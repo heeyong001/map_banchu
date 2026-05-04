@@ -493,25 +493,38 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [오류 완벽 해결] .get()을 사용하여 변수가 없더라도 에러(KeyError) 없이 0부터 시작하게 만듭니다.
-    current_wait_count = st.session_state.get('cookie_wait_count', 0)
-    
-    # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
-    if current_wait_count < 1:
-        # 카운터를 1 증가시켜서 세션에 다시 안전하게 저장합니다.
-        st.session_state['cookie_wait_count'] = current_wait_count + 1
+    # 🚀 [최종 진화형] 파이썬을 멈추거나 재우지 않습니다! (로딩 최소화 목적 100% 달성)
+    # 로그인 폼이 그려지기 찰나의 순간, 자바스크립트가 쿠키를 직접 확인하고 즉시 대시보드로 납치(?)합니다.
+    js_code = """
+    <script>
+    // 1. 주소창에 이미 로그인 정보가 있다면 무한반복을 방지합니다.
+    if (!window.parent.location.search.includes('auth_user')) {
         
-        # 성급하게 로그인 폼을 그리지 않고, 중앙에 우아한 확인 문구를 띄웁니다.
-        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 자동 로그인 정보를 확인하고 있습니다...</h3><p style='color:#728A7C;'>잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        // 2. 브라우저의 쿠키를 0.001초 만에 직접 뒤져서 가져오는 함수
+        function getCookie(name) {
+            let matches = window.parent.document.cookie.match(new RegExp(
+                "(?:^|; )" + name.replace(/([\\.$?*|{}\\(\\)\\[\\]\\\\\\/\\+^])/g, '\\\\$1') + "=([^;]*)"
+            ));
+            return matches ? decodeURIComponent(matches[1]) : undefined;
+        }
         
-        # 💡 만약을 대비한 수동 새로고침 버튼 (보통은 누르기 전에 자동 복구됩니다)
-        st.markdown("<div style='text-align:center; margin-top:20px;'>", unsafe_allow_html=True)
-        if st.button("⏳ 화면이 멈춰있다면 여기를 클릭하세요"):
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        time.sleep(0.5)
-        st.rerun()
+        let user = getCookie('auth_user');
+        let role = getCookie('auth_role');
+        
+        // 3. 쿠키가 발견되면? 기다리지 않고 주소창에 정보를 박아넣은 뒤 즉시 화면 이동!
+        if (user && role) {
+            user = user.replace(/^"|"$/g, ''); // 포함된 따옴표 껍질 제거
+            role = role.replace(/^"|"$/g, '');
+            
+            let url = new URL(window.parent.location.href);
+            url.searchParams.set('auth_user', user);
+            url.searchParams.set('auth_role', role);
+            window.parent.location.replace(url.toString()); // 뒤로가기 기록 안 남기고 빛의 속도로 이동
+        }
+    }
+    </script>
+    """
+    st.markdown(js_code, unsafe_allow_html=True)
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
