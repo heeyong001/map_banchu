@@ -431,7 +431,6 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
-    st.session_state['cold_start_check'] = True # 🚀 [추가] 처음 켜졌는지 확인하는 장치
 
 # 🚀 [추가] 2. 가장 확실하고 빠른 URL 파라미터로 즉시 복구 시도
 query_params = st.query_params
@@ -439,25 +438,6 @@ if "auth_user" in query_params and "auth_role" in query_params:
     st.session_state['logged_in'] = True
     st.session_state['username'] = query_params["auth_user"]
     st.session_state['role'] = query_params["auth_role"]
-    st.session_state['cookie_wait_count'] = 99 # 복구 완료 표시
-
-# 3. URL에 없으면 쿠키로 복구 (기존 로직 유지되지만 더 안전하게)
-if not st.session_state['logged_in']:
-    try:
-        saved_token = cookie_controller.get('auth_token')
-        saved_user = cookie_controller.get('auth_user')
-        saved_role = cookie_controller.get('auth_role')
-    except TypeError:
-        saved_token, saved_user, saved_role = None, None, None
-    
-    # 3개가 모두 존재한다면, 구글 시트 확인 없이 즉시 로그인 처리!
-    if saved_token and saved_user and saved_role:
-        st.session_state['logged_in'] = True
-        st.session_state['username'] = saved_user
-        st.session_state['role'] = saved_role
-        st.session_state['cookie_wait_count'] = 99 # 복구 완료 표시
-        # 💡 st.rerun()이 없으므로 화면이 깜빡이지 않고 자연스럽게 다음 코드로 넘어갑니다.
-
 
 # --- 대시보드 상태 변수 유지 ---
 if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
@@ -493,33 +473,27 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [최종 진화형] 파이썬을 멈추거나 재우지 않습니다! (로딩 최소화 목적 100% 달성)
-    # 로그인 폼이 그려지기 찰나의 순간, 자바스크립트가 쿠키를 직접 확인하고 즉시 대시보드로 납치(?)합니다.
+    # 🚀 [최종 진화형] 모바일에서 증발하는 쿠키 대신, 영구 저장소(localStorage)를 0.001초 만에 확인합니다!
     js_code = """
     <script>
-    // 1. 주소창에 이미 로그인 정보가 있다면 무한반복을 방지합니다.
     if (!window.parent.location.search.includes('auth_user')) {
+        let user = window.parent.localStorage.getItem('banchu_auth_user');
+        let role = window.parent.localStorage.getItem('banchu_auth_role');
+        let expire = window.parent.localStorage.getItem('banchu_expire');
         
-        // 2. 브라우저의 쿠키를 0.001초 만에 직접 뒤져서 가져오는 함수
-        function getCookie(name) {
-            let matches = window.parent.document.cookie.match(new RegExp(
-                "(?:^|; )" + name.replace(/([\\.$?*|{}\\(\\)\\[\\]\\\\\\/\\+^])/g, '\\\\$1') + "=([^;]*)"
-            ));
-            return matches ? decodeURIComponent(matches[1]) : undefined;
-        }
-        
-        let user = getCookie('auth_user');
-        let role = getCookie('auth_role');
-        
-        // 3. 쿠키가 발견되면? 기다리지 않고 주소창에 정보를 박아넣은 뒤 즉시 화면 이동!
-        if (user && role) {
-            user = user.replace(/^"|"$/g, ''); // 포함된 따옴표 껍질 제거
-            role = role.replace(/^"|"$/g, '');
-            
-            let url = new URL(window.parent.location.href);
-            url.searchParams.set('auth_user', user);
-            url.searchParams.set('auth_role', role);
-            window.parent.location.replace(url.toString()); // 뒤로가기 기록 안 남기고 빛의 속도로 이동
+        if (user && role && expire) {
+            // 현재 시간이 만료 시간(자정) 이전인지 확인
+            if (Date.now() < parseInt(expire)) {
+                let url = new URL(window.parent.location.href);
+                url.searchParams.set('auth_user', user);
+                url.searchParams.set('auth_role', role);
+                window.parent.location.replace(url.toString()); // 빛의 속도로 대시보드 강제 이동
+            } else {
+                // 자정이 지났다면 보관함 깔끔하게 비우기
+                window.parent.localStorage.removeItem('banchu_auth_user');
+                window.parent.localStorage.removeItem('banchu_auth_role');
+                window.parent.localStorage.removeItem('banchu_expire');
+            }
         }
     }
     </script>
@@ -565,30 +539,26 @@ if not st.session_state['logged_in']:
                         # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
                         add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
                         
-                        # 🚀 [수정] 한국 시간(KST) 기준으로 서버 시간 강제 고정하여 자정 계산
-                        KST = timezone(timedelta(hours=9))
-                        now = datetime.now(KST)
-                                                
-                        # 한국 시간 기준 다음날 자정(00:00:00) 생성
-                        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                        seconds_until_midnight = int((next_midnight - now).total_seconds())
-
-                        # 🚀 [오류 완벽 방어] 라이브러리 내부의 쿠키 보관함이 찰나의 순간 준비되지 않았다면, 빈 딕셔너리({})를 강제로 생성해 줍니다.
-                        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
-                            cookie_controller._CookieController__cookies = {}
-
-                        # 🚀 [개선] 쿠키에 아이디와 권한을 함께 저장하여 '재접속 시 통신'을 없앱니다.
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
-
-                        # 🚀 [추가] URL 주소창에도 정보를 몰래 백업해 둡니다! (비밀번호는 빼고)
-                        st.query_params["auth_user"] = username
-                        st.query_params["auth_role"] = user_match.iloc[0]['role']
+                        # 🚀 [완벽 해결] 느려터진 파이썬 쿠키 대신 JS를 시켜 영구 보관함에 정보를 쾅! 박아버립니다.
+                        success_js = f"""
+                        <script>
+                        // 자정(00시) 만료 시간 계산
+                        let now = new Date();
+                        let midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
                         
-                        # 에러 없이 0.1초 대기 후 정상 작동
-                        time.sleep(0.5) 
-                        st.rerun()
+                        window.parent.localStorage.setItem('banchu_auth_user', '{username}');
+                        window.parent.localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
+                        window.parent.localStorage.setItem('banchu_expire', midnight.getTime().toString());
+                        
+                        // JS가 저장 완료 후 스스로 대시보드로 새로고침!
+                        let url = new URL(window.parent.location.href);
+                        url.searchParams.set('auth_user', '{username}');
+                        url.searchParams.set('auth_role', '{user_match.iloc[0]['role']}');
+                        window.parent.location.replace(url.toString());
+                        </script>
+                        """
+                        st.markdown(success_js, unsafe_allow_html=True)
+                        st.stop() # 👈 [핵심] st.rerun()을 막고 JS가 화면 이동을 완전히 책임지도록 파이썬을 멈춥니다!
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
     st.stop()
@@ -598,17 +568,18 @@ with st.sidebar:
     st.success(f"👤 **{st.session_state['username']}**님 접속중")
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
-        st.query_params.clear()
         
-        # 🚀 [수정됨] 저장했던 3개의 쿠키를 모두 삭제합니다.
-        cookie_controller.remove('auth_token')
-        cookie_controller.remove('auth_user')
-        cookie_controller.remove('auth_role')
-
-        time.sleep(0.5) 
-        
-        st.rerun()
-    st.markdown("---")
+        # 🚀 JS를 호출하여 영구 보관함을 깔끔하게 비우고 메인으로 돌아갑니다.
+        logout_js = """
+        <script>
+        window.parent.localStorage.removeItem('banchu_auth_user');
+        window.parent.localStorage.removeItem('banchu_auth_role');
+        window.parent.localStorage.removeItem('banchu_expire');
+        window.parent.location.href = window.parent.location.pathname;
+        </script>
+        """
+        st.markdown(logout_js, unsafe_allow_html=True)
+        st.stop()
 
     menu = ["📊 대시보드"]
     # 관리자 권한(admin)일 때만 관리자 설정 메뉴가 보입니다.
