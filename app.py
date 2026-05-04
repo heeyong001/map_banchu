@@ -486,8 +486,8 @@ if not st.session_state['logged_in']:
     if st.session_state.get('cold_start_check', False):
         st.session_state['cold_start_check'] = False
         
-        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 안전하게 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
-        time.sleep(0.5)
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
+        time.sleep(1)
         st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
