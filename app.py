@@ -485,7 +485,7 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 if not st.session_state['logged_in']:
     
     # 🚀 [모바일 완벽 방어] 쿠키가 아직 도착 안 했을 가능성을 고려해 최대 2번(약 1초) 재시도합니다.
-    if st.session_state['cookie_wait_count'] < 3:
+    if st.session_state['cookie_wait_count'] < 4:
         st.session_state['cookie_wait_count'] += 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
@@ -537,6 +537,10 @@ if not st.session_state['logged_in']:
                         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
 
+                        # 🚀 [TypeError 완벽 방어] 라이브러리 내부 보관함이 준비 안 됐다면 강제로 생성!
+                        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
+                            cookie_controller._CookieController__cookies = {}
+                        
                         # 🚀 [로그인 유지 핵심] path='/'를 추가하여 브라우저 종료 시 쿠키 증발을 막습니다!
                         cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
