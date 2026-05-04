@@ -473,32 +473,12 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [최종 진화형] React 보안 정책 및 CORS(크로스 도메인) 보안을 모두 뚫어내는 무적의 코드!
-    js_code = """
-    <img src="error.png" style="display:none;" onerror="
-        // 1. window.parent 대신 iframe 자체의 url과 localStorage를 사용하여 보안 에러를 피합니다.
-        if (!window.location.search.includes('auth_user')) {
-            let user = localStorage.getItem('banchu_auth_user');
-            let role = localStorage.getItem('banchu_auth_role');
-            let expire = localStorage.getItem('banchu_expire');
-            
-            if (user && role && expire) {
-                if (Date.now() < parseInt(expire)) {
-                    let url = new URL(window.location.href);
-                    url.searchParams.set('auth_user', user);
-                    url.searchParams.set('auth_role', role);
-                    // 2. 화면 이동은 최상단 부모 창을 이동시킵니다.
-                    window.parent.location.replace(url.toString()); 
-                } else {
-                    localStorage.removeItem('banchu_auth_user');
-                    localStorage.removeItem('banchu_auth_role');
-                    localStorage.removeItem('banchu_expire');
-                }
-            }
-        }
-    ">
-    """
+    # 🚀 [오류 완벽 해결] 마크다운 착각을 막기 위해 띄어쓰기와 주석을 제거한 '단일 줄' 문자열을 사용합니다!
+    js_code = '<img src="error.png" style="display:none;" onerror="if(!window.location.search.includes(\'auth_user\')){let user=localStorage.getItem(\'banchu_auth_user\');let role=localStorage.getItem(\'banchu_auth_role\');let expire=localStorage.getItem(\'banchu_expire\');if(user&&role&&expire){if(Date.now()<parseInt(expire)){let url=new URL(window.location.href);url.searchParams.set(\'auth_user\',user);url.searchParams.set(\'auth_role\',role);window.parent.location.replace(url.toString());}else{localStorage.removeItem(\'banchu_auth_user\');localStorage.removeItem(\'banchu_auth_role\');localStorage.removeItem(\'banchu_expire\');}}}">'
     st.markdown(js_code, unsafe_allow_html=True)
+
+    _, col_center, _ = st.columns([1, 1.2, 1])
+    with col_center:
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
@@ -539,23 +519,13 @@ if not st.session_state['logged_in']:
                         # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
                         add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
                         
-                        # 🚀 [완벽 해결] 로그인 성공 시 영구 금고에 정보를 단단하게 저장하고 즉시 새로고침!
-                        success_js = f"""
-                        <img src="error.png" style="display:none;" onerror="
-                            let now = new Date();
-                            let midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-                            
-                            localStorage.setItem('banchu_auth_user', '{username}');
-                            localStorage.setItem('banchu_auth_role', '{user_match.iloc[0]['role']}');
-                            localStorage.setItem('banchu_expire', midnight.getTime().toString());
-                            
-                            let url = new URL(window.location.href);
-                            url.searchParams.set('auth_user', '{username}');
-                            url.searchParams.set('auth_role', '{user_match.iloc[0]['role']}');
-                            window.parent.location.replace(url.toString());
-                        ">
-                        """
+                        # 🚀 [완벽 해결] 로그인 성공 시 영구 금고 저장 로직 압축 버젼
+                        success_js = f'<img src="error.png" style="display:none;" onerror="let now=new Date();let midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1,0,0,0);localStorage.setItem(\'banchu_auth_user\',\'{username}\');localStorage.setItem(\'banchu_auth_role\',\'{user_match.iloc[0]["role"]}\');localStorage.setItem(\'banchu_expire\',midnight.getTime().toString());let url=new URL(window.location.href);url.searchParams.set(\'auth_user\',\'{username}\');url.searchParams.set(\'auth_role\',\'{user_match.iloc[0]["role"]}\');window.parent.location.replace(url.toString());">'
                         st.markdown(success_js, unsafe_allow_html=True)
+                        
+                        # 💡 브라우저가 위 JS 코드를 무사히 전송받을 수 있도록 0.5초만 숨을 고른 뒤 멈춥니다!
+                        time.sleep(0.5) 
+                        st.stop()
                         
                         # 💡 [핵심] 브라우저가 위 JS 코드를 무사히 전송받을 수 있도록 0.5초만 숨을 고른 뒤 멈춥니다!
                         time.sleep(0.5) 
@@ -570,17 +540,10 @@ with st.sidebar:
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
         
-        # 🚀 로그아웃 시 영구 보관함을 깔끔하게 비웁니다.
-        logout_js = """
-        <img src="error.png" style="display:none;" onerror="
-            localStorage.removeItem('banchu_auth_user');
-            localStorage.removeItem('banchu_auth_role');
-            localStorage.removeItem('banchu_expire');
-            window.parent.location.href = window.parent.location.pathname;
-        ">
-        """
+        # 🚀 로그아웃 시 영구 보관함 비우기 로직 압축 버젼
+        logout_js = '<img src="error.png" style="display:none;" onerror="localStorage.removeItem(\'banchu_auth_user\');localStorage.removeItem(\'banchu_auth_role\');localStorage.removeItem(\'banchu_expire\');window.parent.location.href=window.parent.location.pathname;">'
         st.markdown(logout_js, unsafe_allow_html=True)
-        time.sleep(0.5) # 💡 여기도 브라우저가 명령을 받을 시간을 줍니다.
+        time.sleep(0.5) 
         st.stop()
 
     menu = ["📊 대시보드"]
