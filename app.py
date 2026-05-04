@@ -493,6 +493,9 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
+    # 🚀 [오류 완벽 해결] .get()을 사용하여 변수가 없더라도 에러(KeyError) 없이 0부터 시작하게 만듭니다.
+    current_wait_count = st.session_state.get('cookie_wait_count', 0)
+    
     # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
     if st.session_state['cookie_wait_count'] < 2:
         st.session_state['cookie_wait_count'] += 1
@@ -500,8 +503,8 @@ if not st.session_state['logged_in']:
         # 성급하게 로그인 폼을 그리지 않고, 중앙에 우아한 확인 문구를 띄웁니다.
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 자동 로그인 정보를 확인하고 있습니다...</h3><p style='color:#728A7C;'>잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        time.sleep(0.6) # 💡 브라우저가 파이썬으로 쿠키를 전송할 수 있도록 0.6초의 시간을 벌어줍니다.
-        st.rerun()      # 0.6초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
+        time.sleep(0.5) # 💡 브라우저가 파이썬으로 쿠키를 전송할 수 있도록 0.5초의 시간을 벌어줍니다.
+        st.rerun()      # 0.5초 뒤 쿠키가 도착하면 다시 확인하여 대시보드로 직행합니다!
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
