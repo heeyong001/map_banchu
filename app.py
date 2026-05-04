@@ -510,7 +510,7 @@ if not st.session_state['logged_in']:
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.stop()
+        st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
