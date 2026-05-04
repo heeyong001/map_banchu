@@ -431,7 +431,9 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
-    st.session_state['cold_start_check'] = True # 🚀 원본의 단 1회 대기 로직 복구
+    # 🚀 cold_start_check 대신 횟수 기반 카운터 사용
+    if 'cookie_wait_count' not in st.session_state:
+        st.session_state['cookie_wait_count'] = 0
 
 # 2. 쿠키로 복구 (URL 편법 모두 폐기)
 if not st.session_state['logged_in']:
@@ -482,12 +484,12 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [속도 최적화 복구] 무한 로딩이나 JS 없이, 처음 켜졌을 때 딱 1번만 0.5초 기다려줍니다.
-    if st.session_state.get('cold_start_check', False):
-        st.session_state['cold_start_check'] = False
+    # 🚀 [모바일 완벽 방어] 쿠키가 아직 도착 안 했을 가능성을 고려해 최대 2번(약 1초) 재시도합니다.
+    if st.session_state['cookie_wait_count'] < 2:
+        st.session_state['cookie_wait_count'] += 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
-        time.sleep(1)
+        time.sleep(0.5) # 0.5초씩 끊어서 확인 (모바일 타임아웃 방지)
         st.rerun()
 
     _, col_center, _ = st.columns([1, 1.2, 1])
@@ -540,7 +542,9 @@ if not st.session_state['logged_in']:
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        time.sleep(0.5) 
+                        # 🚀 성공했으므로 확인 카운트를 완료 상태(99)로 변경
+                        st.session_state['cookie_wait_count'] = 99
+                        time.sleep(0.5) # 1.5초는 너무 깁니다. 0.5초면 충분합니다.
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
