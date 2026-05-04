@@ -479,9 +479,7 @@ if not st.session_state['logged_in']:
 
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
-
-    _, col_center, _ = st.columns([1, 1.2, 1])
-    with col_center:
+    
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
