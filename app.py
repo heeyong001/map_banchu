@@ -559,6 +559,10 @@ if not st.session_state['logged_in']:
                         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
 
+                        # 🚀 [오류 완벽 방어] 라이브러리 내부의 쿠키 보관함이 찰나의 순간 준비되지 않았다면, 빈 딕셔너리({})를 강제로 생성해 줍니다.
+                        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
+                            cookie_controller._CookieController__cookies = {}
+
                         # 🚀 [개선] 쿠키에 아이디와 권한을 함께 저장하여 '재접속 시 통신'을 없앱니다.
                         cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
@@ -569,7 +573,7 @@ if not st.session_state['logged_in']:
                         st.query_params["auth_role"] = user_match.iloc[0]['role']
                         
                         # 에러 없이 0.1초 대기 후 정상 작동
-                        time.sleep(0.1) 
+                        time.sleep(0.5) 
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
