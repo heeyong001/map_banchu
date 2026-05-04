@@ -433,12 +433,21 @@ if 'logged_in' not in st.session_state:
     st.session_state['role'] = ""
     st.session_state['cold_start_check'] = True # 🚀 [추가] 처음 켜졌는지 확인하는 장치
 
-# 2. 브라우저 재시작 시 쿠키 복구 로직 (완벽한 로그인 유지)
+# 🚀 [추가] 2. 가장 확실하고 빠른 URL 파라미터로 즉시 복구 시도
+query_params = st.query_params
+if "auth_user" in query_params and "auth_role" in query_params:
+    st.session_state['logged_in'] = True
+    st.session_state['username'] = query_params["auth_user"]
+    st.session_state['role'] = query_params["auth_role"]
+
+# 3. URL에 없으면 쿠키로 복구 (기존 로직 유지되지만 더 안전하게)
 if not st.session_state['logged_in']:
-    # 🚀 3개의 쿠키를 모두 불러옵니다.
-    saved_token = cookie_controller.get('auth_token')
-    saved_user = cookie_controller.get('auth_user')
-    saved_role = cookie_controller.get('auth_role')
+    try:
+        saved_token = cookie_controller.get('auth_token')
+        saved_user = cookie_controller.get('auth_user')
+        saved_role = cookie_controller.get('auth_role')
+    except TypeError:
+        saved_token, saved_user, saved_role = None, None, None
     
     # 3개가 모두 존재한다면, 구글 시트 확인 없이 즉시 로그인 처리!
     if saved_token and saved_user and saved_role:
@@ -534,7 +543,7 @@ if not st.session_state['logged_in']:
                         # 🚀 [수정] 한국 시간(KST) 기준으로 서버 시간 강제 고정하여 자정 계산
                         KST = timezone(timedelta(hours=9))
                         now = datetime.now(KST)
-                        
+                                                
                         # 한국 시간 기준 다음날 자정(00:00:00) 생성
                         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
                         seconds_until_midnight = int((next_midnight - now).total_seconds())
@@ -543,6 +552,10 @@ if not st.session_state['logged_in']:
                         cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight)
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight)
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight) 
+
+                        # 🚀 [추가] URL 주소창에도 정보를 몰래 백업해 둡니다! (비밀번호는 빼고)
+                        st.query_params["auth_user"] = username
+                        st.query_params["auth_role"] = user_match.iloc[0]['role']
                         
                         # 에러 없이 0.1초 대기 후 정상 작동
                         time.sleep(0.1) 
