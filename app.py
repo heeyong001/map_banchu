@@ -439,6 +439,7 @@ if "auth_user" in query_params and "auth_role" in query_params:
     st.session_state['logged_in'] = True
     st.session_state['username'] = query_params["auth_user"]
     st.session_state['role'] = query_params["auth_role"]
+    st.session_state['cookie_wait_count'] = 99 # 복구 완료 표시
 
 # 3. URL에 없으면 쿠키로 복구 (기존 로직 유지되지만 더 안전하게)
 if not st.session_state['logged_in']:
@@ -454,6 +455,7 @@ if not st.session_state['logged_in']:
         st.session_state['logged_in'] = True
         st.session_state['username'] = saved_user
         st.session_state['role'] = saved_role
+        st.session_state['cookie_wait_count'] = 99 # 복구 완료 표시
         # 💡 st.rerun()이 없으므로 화면이 깜빡이지 않고 자연스럽게 다음 코드로 넘어갑니다.
 
 
@@ -491,9 +493,9 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [핵심 개선] 브라우저 강제 종료 후 돌아왔을 때 로그인 창이 번쩍이는 현상 방지
-    if st.session_state.get('cold_start_check', False):
-        st.session_state['cold_start_check'] = False # 다시 실행되지 않도록 차단
+    # 🚀 [핵심 개선] 브라우저가 잠에서 깨어 쿠키를 줄 때까지 최대 2번(약 1초) 기다려줍니다.
+    if st.session_state['cookie_wait_count'] < 2:
+        st.session_state['cookie_wait_count'] += 1
         
         # 성급하게 로그인 폼을 그리지 않고, 중앙에 우아한 확인 문구를 띄웁니다.
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 자동 로그인 정보를 확인하고 있습니다...</h3><p style='color:#728A7C;'>잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
