@@ -540,7 +540,7 @@ if not st.session_state['logged_in']:
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        time.sleep(0.8) 
+                        time.sleep(1) 
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
