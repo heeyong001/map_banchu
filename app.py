@@ -492,7 +492,8 @@ if not st.session_state['logged_in']:
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 사용자를 확인중입니다...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        st.stop() # 👈 [핵심] 여기서 딱 멈춰두면, 쿠키 전송이 완료되는 즉시 스트림릿이 알아서 대시보드로 자동 새로고침해 줍니다!
+        time.sleep(1) 
+        st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
     _, col_center, _ = st.columns([1, 1.2, 1])
