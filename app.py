@@ -432,7 +432,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['username'] = ""
     st.session_state['role'] = ""
 
-# 2. 쿠키로 복구 (URL 편법 모두 폐기)
+# 2. 쿠키로 복구 
 if not st.session_state['logged_in']:
     try:
         saved_token = cookie_controller.get('auth_token')
@@ -481,6 +481,16 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
      
+    # 🚀 [가장 우아한 대기 화면 UI] 파이썬을 억지로 재우거나 강제 새로고침하지 않습니다.
+    # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
+    if st.session_state['cookie_wait_count'] < 1:
+        st.session_state['cookie_wait_count'] += 1
+        
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 사용자를 확인중입니다...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        
+        st.stop() # 👈 [핵심] 여기서 딱 멈춰두면, 쿠키 전송이 완료되는 즉시 스트림릿이 알아서 대시보드로 자동 새로고침해 줍니다!
+
+    # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
