@@ -480,13 +480,14 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # [2단계] 로그인 화면 및 화면 라우팅
 # ==============================================================================
 if not st.session_state['logged_in']:
-     
+    
     # 🚀 [KeyError 완벽 해결] 대괄호 대신 .get()을 사용하여 상자가 없더라도 에러 없이 0으로 시작하게 만듭니다.
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
-    # 🚀 [가장 우아한 대기 화면 UI] 파이썬을 억지로 재우거나 강제 새로고침하지 않습니다.
+    # 🚀 [가장 우아한 대기 화면 UI]
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
-    if st.session_state['cookie_wait_count'] < 1:
+    if current_wait_count < 1:
+        # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 사용자를 확인중입니다...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
