@@ -431,9 +431,6 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
-    # 🚀 처음 접속 시 쿠키를 기다려줄 카운터 초기화
-    if 'cookie_wait_count' not in st.session_state:
-        st.session_state['cookie_wait_count'] = 0
 
 # 2. 쿠키로 복구 (URL 편법 모두 폐기)
 if not st.session_state['logged_in']:
@@ -483,15 +480,7 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # [2단계] 로그인 화면 및 화면 라우팅
 # ==============================================================================
 if not st.session_state['logged_in']:
-    
-    # 🚀 [모바일 완벽 방어] 쿠키가 아직 도착 안 했을 가능성을 고려해 최대 2번(약 1초) 재시도합니다.
-    if st.session_state['cookie_wait_count'] < 4:
-        st.session_state['cookie_wait_count'] += 1
-        
-        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 로그인 정보를 확인하고 있습니다...</h3></div>", unsafe_allow_html=True)
-        time.sleep(0.5) # 0.5초씩 끊어서 확인 (모바일 타임아웃 방지)
-        st.rerun()
-
+     
     _, col_center, _ = st.columns([1, 1.2, 1])
     with col_center:
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
@@ -546,9 +535,9 @@ if not st.session_state['logged_in']:
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        # 🚀 성공했으므로 확인 카운트를 완료 상태(99)로 변경
-                        st.session_state['cookie_wait_count'] = 99
-                        time.sleep(0.1) # 1.5초는 너무 깁니다. 0.5초면 충분합니다.
+                        # 성공 메시지를 띄우고, 모바일 브라우저가 쿠키를 무사히 저장할 수 있도록 딱 1초만 기다린 후 이동합니다.
+                        st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
+                        time.sleep(1) # 1초 대기.
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
