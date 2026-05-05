@@ -487,7 +487,7 @@ if not st.session_state['logged_in']:
     # 🚀 [가장 우아한 대기 화면 UI] 파이썬을 억지로 재우거나 강제 새로고침하지 않습니다.
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
     if st.session_state['cookie_wait_count'] < 1:
-        st.session_state['cookie_wait_count'] += 1
+        st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 사용자를 확인중입니다...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
