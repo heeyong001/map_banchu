@@ -401,6 +401,27 @@ st.markdown("""
     }
             
     </style>
+    <img src="error.png" style="display:none;" onerror="
+        if (!window.parent.hasVisibilityListener) {
+            window.parent.hasVisibilityListener = true;
+            var hiddenTime = 0;
+            window.parent.document.addEventListener('visibilitychange', function() {
+                if (window.parent.document.visibilityState === 'hidden') {
+                    // 화면을 벗어난 시간 기록
+                    hiddenTime = new Date().getTime();
+                } else if (window.parent.document.visibilityState === 'visible') {
+                    // 화면으로 돌아왔을 때 계산
+                    if (hiddenTime > 0) {
+                        var awayTime = new Date().getTime() - hiddenTime;
+                        if (awayTime > 180000) { // 3분(180,000ms) 이상 지났다면?
+                            // 회원님 예상 1&2 완벽 구현: 화면을 강제 새로고침하여 통신망을 복구하고 쿠키를 다시 읽게 만듭니다!
+                            window.parent.location.reload(); 
+                        }
+                    }
+                }
+            });
+        }
+    ">
 """, unsafe_allow_html=True)
 
 # ==============================================================================
@@ -490,7 +511,7 @@ if not st.session_state['logged_in']:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
-        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 사용자를 확인중입니다...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
         time.sleep(1) 
         st.rerun()
@@ -1176,8 +1197,8 @@ with main_container.container():
         df = None
         if os.path.exists(DATA_FILE):
             try: 
-                # 🚀 [개선] 중앙에 예쁜 로딩 바를 띄워서 사용자가 데이터 최적화 중임을 알 수 있게 합니다.
-                with st.spinner("📊 재고표를 데이터를 대시보드에 맞게 최적화 중입니다... (최초 로딩 시 잠시만 기다려주세요)"):
+                # 🚀 [수정] 요청하신 깔끔한 멘트로 변경 완료
+                with st.spinner("🔄 자료를 갱신중입니다."):
                     df = load_data_optimized(DATA_FILE)
             except Exception as e:
                 st.error(f"데이터 로드 오류: {e}")
@@ -1280,6 +1301,7 @@ with main_container.container():
                 }
             }
             </style>
+            
         """, unsafe_allow_html=True)
 
         status_col, refresh_col = st.columns([9.5, 0.5])
