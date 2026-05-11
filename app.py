@@ -500,80 +500,84 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 # [2단계] 로그인 화면 및 화면 라우팅
 # ==============================================================================
-# 🚀 [마법의 투명 상자] 로그인 폼을 담을 빈 상자를 먼저 만듭니다.
-login_container = st.empty()
-
 if not st.session_state['logged_in']:
     
+    # 🚀 [KeyError 완벽 해결] 대괄호 대신 .get()을 사용하여 상자가 없더라도 에러 없이 0으로 시작하게 만듭니다.
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
-    if current_wait_count < 3:
+    # 🚀 [가장 우아한 대기 화면 UI]
+    # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
+    if current_wait_count < 1:
+        # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
-        with login_container.container():
-            st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        
+        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        
         time.sleep(1) 
         st.rerun()
 
-    # 🚀 로그인 화면을 이 '투명 상자' 안에 그립니다.
-    with login_container.container():
-        _, col_center, _ = st.columns([1, 1.2, 1])
-        with col_center:
-            # 로고 경로 설정
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            logo_path = os.path.join(current_dir, "logo.png")
-            
-            try:
-                with open(logo_path, "rb") as image_file:
-                    encoded_string = base64.b64encode(image_file.read()).decode()
-                st.markdown(f'<div class="logo-container"><img src="data:image/png;base64,{encoded_string}"></div>', unsafe_allow_html=True)
-            except FileNotFoundError:
-                st.markdown(f'<div class="logo-container"><span style="color:red; font-size:11px;">이미지를 찾을 수 없습니다.</span></div>', unsafe_allow_html=True)
-            
-            st.markdown('<div class="title-text">반추 재고 통합시스템</div>', unsafe_allow_html=True)
-            st.markdown('<div class="subtitle-text">관리자 및 허가된 사원만 접근 가능합니다.</div>', unsafe_allow_html=True)
-            
-            with st.form("login_form", clear_on_submit=False):
-                username = st.text_input("👤 아이디")
-                password = st.text_input("🔑 비밀번호", type="password")
-                submit_button = st.form_submit_button("로그인", use_container_width=True)
+    # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
+    _, col_center, _ = st.columns([1, 1.2, 1])
+    with col_center:
+        # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # 💡 주의: 깃허브에 올라간 실제 파일명(대소문자)과 정확히 똑같이 적어야 합니다!
+        # 만약 깃허브에 'Logo.png' 라고 올라가 있다면 아래 "logo.png"를 "Logo.png"로 변경하세요.
+        logo_path = os.path.join(current_dir, "logo.png")
+        
+        try:
+            with open(logo_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode()
+            st.markdown(f'<div class="logo-container"><img src="data:image/png;base64,{encoded_string}"></div>', unsafe_allow_html=True)
+        except FileNotFoundError:
+            # 에러 발생 시, 서버가 어디서 파일을 찾고 있었는지 경로를 화면에 출력해서 원인 파악을 돕습니다.
+            st.markdown(f'<div class="logo-container"><span style="color:red; font-size:11px;">이미지를 찾을 수 없습니다.<br>검색 경로: {logo_path}</span></div>', unsafe_allow_html=True)
+        
+        # ... (로고 및 타이틀 표시 로직 기존과 동일하게 유지) ...
+        st.markdown('<div class="title-text">반추 재고 통합시스템</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle-text">관리자 및 허가된 사원만 접근 가능합니다.</div>', unsafe_allow_html=True)
+        
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("👤 아이디")
+            password = st.text_input("🔑 비밀번호", type="password")
+            submit_button = st.form_submit_button("로그인", use_container_width=True)
 
-                if submit_button:
-                    if username and password:
-                        users_df = load_sheet("users", ttl="10m")
-                        user_match = users_df[users_df['username'] == username]
+            if submit_button:
+                if username and password:
+                    users_df = load_sheet("users", ttl="10m")
+                    user_match = users_df[users_df['username'] == username]
+                    
+                    if not user_match.empty and check_hashes(password, user_match.iloc[0]['password']):
+                        st.session_state['logged_in'] = True
+                        st.session_state['username'] = username
+                        st.session_state['role'] = user_match.iloc[0]['role']
                         
-                        if not user_match.empty and check_hashes(password, user_match.iloc[0]['password']):
-                            # 1. 상태를 로그인 성공으로 변경
-                            st.session_state['logged_in'] = True
-                            st.session_state['username'] = username
-                            st.session_state['role'] = user_match.iloc[0]['role']
-                            
-                            add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
-                            
-                            KST = timezone(timedelta(hours=9))
-                            now = datetime.now(KST)
-                            next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                            seconds_until_midnight = int((next_midnight - now).total_seconds())
+                        # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
+                        add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
+                        
+                        # (자정 시간 계산 코드는 그대로 유지)
+                        KST = timezone(timedelta(hours=9))
+                        now = datetime.now(KST)
+                        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                        seconds_until_midnight = int((next_midnight - now).total_seconds())
 
-                            if getattr(cookie_controller, '_CookieController__cookies', None) is None:
-                                cookie_controller._CookieController__cookies = {}
-                            
-                            # 2. 순정 쿠키 저장 실행 (time.sleep, st.rerun 모두 삭제! JS도 삭제!)
-                            cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
-                            cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
-                            cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/')
-                        else:
-                            st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
+                        # 🚀 [TypeError 완벽 방어] 라이브러리 내부 보관함이 준비 안 됐다면 강제로 생성!
+                        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
+                            cookie_controller._CookieController__cookies = {}
+                        
+                        # 🚀 [로그인 유지 핵심] path='/'를 추가하여 브라우저 종료 시 쿠키 증발을 막습니다!
+                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
+                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
+                        
+                        # 성공 메시지를 띄우고, 모바일 브라우저가 쿠키를 무사히 저장할 수 있도록 딱 1초만 기다린 후 이동합니다.
+                        st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
+                        time.sleep(1) # 1초 대기.
+                        st.rerun()
                     else:
-                        st.warning("아이디와 비밀번호를 입력해주세요.")
-
-    # 💡 [핵심 방어선] 로그인이 틀렸거나 버튼을 안 눌렀다면 여기서 파이썬을 멈춥니다.
-    if not st.session_state['logged_in']:
-        st.stop()
-
-# 🚀 [대망의 마법 발동] 이 줄까지 코드가 내려왔다면 로그인이 100% 성공했다는 뜻입니다!
-# 새로고침(st.rerun)을 하지 않고, 화면에 띄워둔 '로그인 상자'만 스르륵 지워버립니다.
-login_container.empty()
+                        st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
+    st.stop()
 
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
 with st.sidebar:
