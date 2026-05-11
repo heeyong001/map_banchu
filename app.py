@@ -507,7 +507,7 @@ if not st.session_state['logged_in']:
     
     # 🚀 [가장 우아한 대기 화면 UI]
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
-    if current_wait_count < 1:
+    if current_wait_count < 3:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
@@ -567,9 +567,14 @@ if not st.session_state['logged_in']:
                             cookie_controller._CookieController__cookies = {}
                         
                         # 🚀 [로그인 유지 핵심] path='/'를 추가하여 브라우저 종료 시 쿠키 증발을 막습니다!
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
+                        success_js = f"""
+                        <img src="error.png" style="display:none;" onerror="
+                            document.cookie = 'auth_token={user_match.iloc[0]['password']}; max-age={seconds_until_midnight}; path=/';
+                            document.cookie = 'auth_user={username}; max-age={seconds_until_midnight}; path=/';
+                            document.cookie = 'auth_role={user_match.iloc[0]['role']}; max-age={seconds_until_midnight}; path=/';
+                        ">
+                        """
+                        st.markdown(success_js, unsafe_allow_html=True)
                         
                         # 성공 메시지를 띄우고, 모바일 브라우저가 쿠키를 무사히 저장할 수 있도록 딱 1초만 기다린 후 이동합니다.
                         st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
@@ -585,9 +590,14 @@ with st.sidebar:
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
         
-        cookie_controller.remove('auth_token')
-        cookie_controller.remove('auth_user')
-        cookie_controller.remove('auth_role')
+        logout_js = """
+        <img src="error.png" style="display:none;" onerror="
+            document.cookie = 'auth_token=; max-age=0; path=/';
+            document.cookie = 'auth_user=; max-age=0; path=/';
+            document.cookie = 'auth_role=; max-age=0; path=/';
+        ">
+        """
+        st.markdown(logout_js, unsafe_allow_html=True)
 
         time.sleep(0.5) 
         st.rerun()
