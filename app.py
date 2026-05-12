@@ -628,6 +628,11 @@ if st.session_state.get('needs_cookie_bake', False):
     
     # 저장이 끝났으므로 신호를 끕니다.
     st.session_state['needs_cookie_bake'] = False
+    
+    # 🚀 [추가] 방어막 깃발: 이번 실행(Run)은 쿠키 굽기 전용 턴임을 알립니다!
+    st.session_state['baking_turn'] = True
+else:
+    st.session_state['baking_turn'] = False
 
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
 with st.sidebar: # 👈 기존에 있던 코드
@@ -1246,12 +1251,22 @@ with main_container.container():
 
         df = None
         if os.path.exists(DATA_FILE):
-            try: 
-                # 🚀 [수정] 요청하신 깔끔한 멘트로 변경 완료
-                with st.spinner("🔄 자료를 갱신중입니다."):
-                    df = load_data_optimized(DATA_FILE)
-            except Exception as e:
-                st.error(f"데이터 로드 오류: {e}")
+            # 🚀 [인터럽트 방어] 쿠키를 굽는 턴에서는 무거운 엑셀을 읽지 않고 대기합니다!
+            if st.session_state.get('baking_turn', False):
+                st.info("🔄 안전한 접속을 위해 보안 인증을 마무리하고 있습니다...")
+                # 컴포넌트가 알아서 Rerun을 유발하지만, 혹시 모를 먹통을 대비해 1.5초 뒤 강제 새로고침 보험을 걸어둡니다.
+                st.markdown("""
+                    <img src="error.png" style="display:none;" onerror="
+                        setTimeout(function() { window.parent.location.reload(); }, 1500);
+                    ">
+                """, unsafe_allow_html=True)
+            else:
+                try: 
+                    # 🚀 이젠 방해꾼이 없으므로 첫 번째 엑셀 읽기 때 무조건 캐시에 100% 성공 안착합니다!
+                    with st.spinner("🔄 자료를 갱신중입니다."):
+                        df = load_data_optimized(DATA_FILE)
+                except Exception as e:
+                    st.error(f"데이터 로드 오류: {e}")
 
        # 2. 메인 화면: 상태바
         st.markdown("""
