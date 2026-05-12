@@ -551,7 +551,7 @@ if not st.session_state['logged_in']:
         wait_msg_container.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
         # 3. 브라우저가 쿠키를 찾도록 1.5초 기다려줍니다.
-        time.sleep(0.5) 
+        time.sleep(1.5) 
         
         # 🚀 [핵심 방어코드] 새로고침(rerun) 명령을 내리기 직전에, 띄워뒀던 멘트를 수동으로 완전히 삭제합니다!
         wait_msg_container.empty()
