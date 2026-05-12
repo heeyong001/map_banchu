@@ -541,7 +541,7 @@ if not st.session_state['logged_in']:
     # 🚀 [KeyError 완벽 해결] 대괄호 대신 .get()을 사용하여 상자가 없더라도 에러 없이 0으로 시작하게 만듭니다.
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
-    if current_wait_count < 3:
+    if current_wait_count < 1.5:
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         # 1. 빈 상자를 하나 만듭니다.
@@ -550,8 +550,8 @@ if not st.session_state['logged_in']:
         # 2. 상자 안에 멘트를 집어넣습니다.
         wait_msg_container.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        # 3. 브라우저가 쿠키를 찾도록 1.5초 기다려줍니다.
-        time.sleep(1.5) 
+        # 3. 브라우저가 쿠키를 찾도록 0.5초 기다려줍니다.
+        time.sleep(0.5) 
         
         # 🚀 [핵심 방어코드] 새로고침(rerun) 명령을 내리기 직전에, 띄워뒀던 멘트를 수동으로 완전히 삭제합니다!
         wait_msg_container.empty()
