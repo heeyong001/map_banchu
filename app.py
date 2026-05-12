@@ -533,30 +533,29 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
     map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
     return temp_df, map_filtered_df
 
-# ==============================================================================
+## ==============================================================================
 # [2단계] 로그인 화면 및 화면 라우팅
 # ==============================================================================
 if not st.session_state['logged_in']:
     
-    # 🚀 [KeyError 완벽 해결] 대괄호 대신 .get()을 사용하여 상자가 없더라도 에러 없이 0으로 시작하게 만듭니다.
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
     if current_wait_count < 1.5:
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
-        # 1. 빈 상자를 하나 만듭니다.
-        wait_msg_container = st.empty()
+        # 🚀 [잔상 완벽 해결] position: fixed 를 사용해 화면 중앙에 '로딩 박스'를 띄웁니다.
+        # 프론트엔드 오류로 글자가 2번 출력되더라도 완벽하게 겹치므로 절대 2줄로 보이지 않습니다!
+        st.markdown("""
+            <div style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
+                <h3 style='color:#D4AF37; margin-bottom: 15px;'>🔄 잠시만 기다려주세요...</h3>
+                <p style='color:#728A7C; margin: 0;'>안전한 접속을 위해 잠시만 기다려주세요.</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        # 2. 상자 안에 멘트를 집어넣습니다.
-        wait_msg_container.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        # 💡 0.5초는 모바일 환경에서 애매하게 통신이 겹쳐서 오류를 유발하므로 1초로 늘려줍니다.
+        time.sleep(1.0) 
         
-        # 3. 브라우저가 쿠키를 찾도록 0.5초 기다려줍니다.
-        time.sleep(0.5) 
-        
-        # 🚀 [핵심 방어코드] 새로고침(rerun) 명령을 내리기 직전에, 띄워뒀던 멘트를 수동으로 완전히 삭제합니다!
-        wait_msg_container.empty()
-        
-        # 4. 화면을 깔끔하게 새로고침합니다.
+        # 삭제(empty) 코드 없이 바로 새로고침합니다.
         st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
