@@ -445,16 +445,34 @@ def make_session_token(password_hash):
 # ==============================================================================
 # [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (오직 순수 Cookie 방식)
 # ==============================================================================
-with st.sidebar:
-    st.markdown('<div style="height: 0px; margin: 0px; padding: 0px; overflow: hidden;">', unsafe_allow_html=True)
-    cookie_controller = CookieController()
-    st.markdown('</div>', unsafe_allow_html=True)
+cookie_controller = CookieController()
 
 # 1. 기본 상태 초기화
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
     st.session_state['username'] = ""
     st.session_state['role'] = ""
+
+# 🚀 [핵심] 사이드바 버그와 상단 빈 공간을 완벽하게 제거하는 CSS 마법
+css_to_inject = """
+<style>
+/* 1. 쿠키 컨트롤러가 메인 화면 상단에서 차지하는 투명 블록을 찾아내서 완전히 폭파시킵니다 (여백 0) */
+iframe[title*="cookie"] { display: none !important; }
+div[data-testid="stElementContainer"]:has(iframe[title*="cookie"]) { 
+    display: none !important; height: 0px !important; margin: 0px !important; padding: 0px !important; 
+}
+"""
+
+# 2. 로그인 화면(로그아웃 상태)일 때는 사이드바 자체를 통째로 숨겨버립니다.
+if not st.session_state['logged_in']:
+    css_to_inject += """
+    /* 로그아웃 버튼을 눌러도 사이드바가 열려있는 버그 원천 차단 */
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="collapsedControl"] { display: none !important; }
+    """
+
+css_to_inject += "</style>"
+st.markdown(css_to_inject, unsafe_allow_html=True)
 
 # 2. 쿠키로 복구 
 if not st.session_state['logged_in']:
