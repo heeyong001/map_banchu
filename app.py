@@ -445,7 +445,10 @@ def make_session_token(password_hash):
 # ==============================================================================
 # [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (오직 순수 Cookie 방식)
 # ==============================================================================
-cookie_controller = CookieController()
+with st.sidebar:
+    st.markdown('<div style="height: 0px; margin: 0px; padding: 0px; overflow: hidden;">', unsafe_allow_html=True)
+    cookie_controller = CookieController()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # 1. 기본 상태 초기화
 if 'logged_in' not in st.session_state:
@@ -511,13 +514,13 @@ if not st.session_state['logged_in']:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
-        st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        # 🚀 [잔상/중복 해결] st.empty()를 사용하여 무조건 한 자리에만 메시지가 뜨도록 강제합니다.
+        wait_msg_container = st.empty()
+        with wait_msg_container:
+            st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        # 💡 [핵심 UX 개선] 처음 2번은 0.5초만에 빠르게 훑어보고(PC용), 그 이후엔 1초씩 넉넉히 기다립니다(모바일용).
-        sleep_time = 0.5 if current_wait_count < 2 else 1.0
-        time.sleep(sleep_time)
-
-        time.sleep(1) 
+        # 💡 [중복 sleep 제거] 코드가 꼬이지 않도록 딱 한 번만 1초 대기합니다.
+        time.sleep(1.5) 
         st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
