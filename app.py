@@ -507,12 +507,16 @@ if not st.session_state['logged_in']:
     
     # 🚀 [가장 우아한 대기 화면 UI]
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
-    if current_wait_count < 1:
+    if current_wait_count < 5:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
+        # 💡 [핵심 UX 개선] 처음 2번은 0.5초만에 빠르게 훑어보고(PC용), 그 이후엔 1초씩 넉넉히 기다립니다(모바일용).
+        sleep_time = 0.5 if current_wait_count < 2 else 1.0
+        time.sleep(sleep_time)
+
         time.sleep(1) 
         st.rerun()
 
@@ -566,14 +570,15 @@ if not st.session_state['logged_in']:
                         if getattr(cookie_controller, '_CookieController__cookies', None) is None:
                             cookie_controller._CookieController__cookies = {}
                         
-                        # 🚀 [로그인 유지 핵심] path='/'를 추가하여 브라우저 종료 시 쿠키 증발을 막습니다!
+                        # 🚀 [로그인 유지 핵심] 순정 파이썬 코드로 안전하게 쿠키 저장
                         cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
                         cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
                         
-                        # 성공 메시지를 띄우고, 모바일 브라우저가 쿠키를 무사히 저장할 수 있도록 딱 1초만 기다린 후 이동합니다.
+                        # 🚀 성공 시 카운터 완료 처리 (다음 로딩 시 대기실 패스)
+                        st.session_state['cookie_wait_count'] = 99
                         st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
-                        time.sleep(1) # 1초 대기.
+                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
