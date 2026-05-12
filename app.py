@@ -453,20 +453,35 @@ if 'logged_in' not in st.session_state:
     st.session_state['username'] = ""
     st.session_state['role'] = ""
 
-# 🚀 [핵심] 사이드바 버그와 상단 빈 공간을 완벽하게 제거하는 CSS 마법
+# 🚀 [해결] CSS를 뿌리기 전에, 쿠키가 있는지부터 먼저 열어보고 상태를 확정합니다!
+if not st.session_state['logged_in']:
+    try:
+        saved_token = cookie_controller.get('auth_token')
+        saved_user = cookie_controller.get('auth_user')
+        saved_role = cookie_controller.get('auth_role')
+    except Exception: 
+        saved_token, saved_user, saved_role = None, None, None
+    
+    if saved_token and saved_user and saved_role:
+        st.session_state['logged_in'] = True
+        st.session_state['username'] = saved_user
+        st.session_state['role'] = saved_role
+        # 쿠키가 확인되어 logged_in이 True로 변경됨!
+
+# 🚀 [해결] 확정된 로그인 상태를 바탕으로 CSS를 주입합니다.
 css_to_inject = """
 <style>
-/* 1. 쿠키 컨트롤러가 메인 화면 상단에서 차지하는 투명 블록을 찾아내서 완전히 폭파시킵니다 (여백 0) */
+/* 1. 쿠키 컨트롤러가 차지하는 상단 투명 블록 폭파 (여백 0) */
 iframe[title*="cookie"] { display: none !important; }
 div[data-testid="stElementContainer"]:has(iframe[title*="cookie"]) { 
     display: none !important; height: 0px !important; margin: 0px !important; padding: 0px !important; 
 }
 """
 
-# 2. 로그인 화면(로그아웃 상태)일 때는 사이드바 자체를 통째로 숨겨버립니다.
+# 2. 로그인 상태가 '거짓(False)'일 때만 사이드바를 숨깁니다.
 if not st.session_state['logged_in']:
     css_to_inject += """
-    /* 로그아웃 버튼을 눌러도 사이드바가 열려있는 버그 원천 차단 */
+    /* 로그인 화면에서는 사이드바를 통째로 숨김 */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
     """
@@ -538,7 +553,7 @@ if not st.session_state['logged_in']:
             st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
         # 💡 [중복 sleep 제거] 코드가 꼬이지 않도록 딱 한 번만 1초 대기합니다.
-        time.sleep(1.5) 
+        time.sleep(0.5) 
         st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
