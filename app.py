@@ -507,7 +507,7 @@ if not st.session_state['logged_in']:
     
     # 🚀 [가장 우아한 대기 화면 UI]
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
-    if current_wait_count < 2:
+    if current_wait_count < 3:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
@@ -557,35 +557,42 @@ if not st.session_state['logged_in']:
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
                         
-                        # 🚀 [추가] 로그인 성공 시 이력(Audit Log) 남기기
+                        # 🚀 [추가] 뒤에서 쿠키를 구울 때 쓸 비밀번호 해시와 굽기 신호(플래그)를 세션에 임시 저장합니다.
+                        st.session_state['user_pw_hash'] = user_match.iloc[0]['password']
+                        st.session_state['needs_cookie_bake'] = True 
+                        
                         add_audit_log(username, "시스템 로그인", "대시보드 정상 접속")
                         
-                        # (자정 시간 계산 코드는 그대로 유지)
-                        KST = timezone(timedelta(hours=9))
-                        now = datetime.now(KST)
-                        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-                        seconds_until_midnight = int((next_midnight - now).total_seconds())
-
-                        # 🚀 [TypeError 완벽 방어] 라이브러리 내부 보관함이 준비 안 됐다면 강제로 생성!
-                        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
-                            cookie_controller._CookieController__cookies = {}
-                        
-                        # 🚀 [로그인 유지 핵심] 순정 파이썬 코드로 안전하게 쿠키 저장
-                        cookie_controller.set('auth_token', user_match.iloc[0]['password'], max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_user', username, max_age=seconds_until_midnight, path='/')
-                        cookie_controller.set('auth_role', user_match.iloc[0]['role'], max_age=seconds_until_midnight, path='/') 
-                        
-                        # 🚀 성공 시 카운터 완료 처리 (다음 로딩 시 대기실 패스)
+                        # 🚀 성공 시 카운터 완료 처리 및 딜레이(time.sleep) 없이 0초 만에 즉시 대시보드로 진입!
                         st.session_state['cookie_wait_count'] = 99
                         st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
-                        time.sleep(0.5)
                         st.rerun()
                     else:
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
     st.stop()
 
+# ==============================================================================
+# 🚀 [무중단 쿠키 굽기] 대시보드가 화면에 열린 상태에서, 방해 없이 조용히 쿠키를 저장합니다!
+# ==============================================================================
+if st.session_state.get('needs_cookie_bake', False):
+    KST = timezone(timedelta(hours=9))
+    now = datetime.now(KST)
+    next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    seconds_until_midnight = int((next_midnight - now).total_seconds())
+
+    if getattr(cookie_controller, '_CookieController__cookies', None) is None:
+        cookie_controller._CookieController__cookies = {}
+    
+    # 여기서 쿠키를 브라우저로 쏩니다. 화면이 넘어간 상태라 절대 끊기거나 증발하지 않습니다.
+    cookie_controller.set('auth_token', st.session_state['user_pw_hash'], max_age=seconds_until_midnight, path='/')
+    cookie_controller.set('auth_user', st.session_state['username'], max_age=seconds_until_midnight, path='/')
+    cookie_controller.set('auth_role', st.session_state['role'], max_age=seconds_until_midnight, path='/') 
+    
+    # 저장이 끝났으므로 신호를 끕니다.
+    st.session_state['needs_cookie_bake'] = False
+
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
-with st.sidebar:
+with st.sidebar: # 👈 기존에 있던 코드
     st.success(f"👤 **{st.session_state['username']}**님 접속중")
     if st.button("🚪 로그아웃", use_container_width=True):
         st.session_state.clear()
