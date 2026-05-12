@@ -541,19 +541,22 @@ if not st.session_state['logged_in']:
     # 🚀 [KeyError 완벽 해결] 대괄호 대신 .get()을 사용하여 상자가 없더라도 에러 없이 0으로 시작하게 만듭니다.
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
-    # 🚀 [가장 우아한 대기 화면 UI]
-    # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
     if current_wait_count < 3:
-        # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
-        # 🚀 [잔상/중복 해결] st.empty()를 사용하여 무조건 한 자리에만 메시지가 뜨도록 강제합니다.
+        # 1. 빈 상자를 하나 만듭니다.
         wait_msg_container = st.empty()
-        with wait_msg_container:
-            st.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
         
-        # 💡 [중복 sleep 제거] 코드가 꼬이지 않도록 딱 한 번만 1초 대기합니다.
+        # 2. 상자 안에 멘트를 집어넣습니다.
+        wait_msg_container.markdown("<div style='text-align:center; margin-top:150px;'><h3 style='color:#D4AF37;'>🔄 잠시만 기다려주세요...</h3><p style='color:#728A7C;'>안전한 접속을 위해 잠시만 기다려주세요.</p></div>", unsafe_allow_html=True)
+        
+        # 3. 브라우저가 쿠키를 찾도록 1.5초 기다려줍니다.
         time.sleep(0.5) 
+        
+        # 🚀 [핵심 방어코드] 새로고침(rerun) 명령을 내리기 직전에, 띄워뒀던 멘트를 수동으로 완전히 삭제합니다!
+        wait_msg_container.empty()
+        
+        # 4. 화면을 깔끔하게 새로고침합니다.
         st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
