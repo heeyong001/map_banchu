@@ -507,7 +507,7 @@ if not st.session_state['logged_in']:
     
     # 🚀 [가장 우아한 대기 화면 UI]
     # 브라우저가 쿠키를 꺼내오는 1~2초 동안만 '사용자를 확인중입니다' 화면을 띄워두고 우아하게 기다립니다.
-    if current_wait_count < 5:
+    if current_wait_count < 2:
         # 카운터를 1 증가시켜서 세션에 안전하게 저장합니다.
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
