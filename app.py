@@ -1421,7 +1421,10 @@ with main_container.container():
                         if selected_models:
                             filtered_df = df[df[real_model].isin(selected_models)]
                             sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
-                            color_placeholder = f"💡 {selected_models_display[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
+                            
+                            # 🚀 [에러 해결] 없어진 옛날 이름 대신, 현재 모델이 담긴 selected_models 변수를 사용합니다!
+                            color_placeholder = f"💡 {selected_models[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
+                            
                         else:
                             sorted_colors = sorted(df[real_color].dropna().unique().tolist())
                         
