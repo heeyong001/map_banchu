@@ -1005,6 +1005,11 @@ with main_container.container():
         # 2. 데이터 사전
         # ==============================================================================
 
+        MODEL_GROUPS = {
+            "SM-F766 (N0/NK 통합)": ["SM-F766N0", "SM-F766NK"],
+            "SM-S937 (N0/NK 통합)": ["SM-S937N0", "SM-S937NK"]
+        }
+
         DISTRICT_CENTERS = {
             "강남": [37.5172, 127.0473], "서초": [37.4837, 127.0324], "송파": [37.5145, 127.1066], 
             "강동": [37.5301, 127.1238], "영등포": [37.5264, 126.8962], "마포": [37.5663, 126.9016],
@@ -1402,23 +1407,13 @@ with main_container.container():
                 c_model, c_color = st.columns(2)
                 
                 with c_model:
-                    raw_models = df[real_model].unique().tolist()
-                    display_options = []
-                    grouped_items = []
-                    for label, items in MODEL_GROUPS.items():
-                        if any(i in raw_models for i in items):
-                            display_options.append(label)
-                            grouped_items.extend(items)
-                    for m in raw_models:
-                        if m not in grouped_items: display_options.append(str(m))
+                    # 1. 엑셀에 존재하는 순수 모델명들을 중복 없이 가져와서 정렬합니다.
+                    raw_models = df[real_model].dropna().unique().tolist()
+                    display_options = [str(m) for m in raw_models]
                     display_options.sort()
                     
-                    selected_models_display = st.multiselect("모델", display_options, placeholder="선택하세요")
-                    
-                    selected_models = []
-                    for opt in selected_models_display:
-                        if opt in MODEL_GROUPS: selected_models.extend(MODEL_GROUPS[opt])
-                        else: selected_models.append(opt)
+                    # 2. 그룹화 변환 로직 없이, 선택된 모델명들을 그대로 변수에 담습니다!
+                    selected_models = st.multiselect("모델", display_options, placeholder="선택하세요")
 
                 with c_color:
                     if real_color:
