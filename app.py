@@ -1135,19 +1135,80 @@ with main_container.container():
                 
             return get_coordinate_smart_jitter(text, base_lat, base_lon)
 
+        # =========================================================
+        # 🎨 색상 팔레트 (엑셀 '색상명' → 실제 표시 색상)
+        #    새 색상이 추가되면 여기에 한 줄만 추가하면 됨
+        # =========================================================
+        COLOR_PALETTE = {
+            # --- 블랙 계열 ---
+            "제트블랙":   "#111111",
+            "블랙":       "#000000",
+            "차콜":       "#36454F",
+            "그래파이트": "#4A4E54",
+            # --- 그레이/실버 계열 ---
+            "티타늄":     "#9AA0A6",
+            "그레이":     "#808080",
+            "실버쉐도우": "#8E8E93",
+            "실버블루":   "#A7B8C8",
+            "화이트실버": "#E6E8EA",
+            "실버":       "#C0C0C0",
+            # --- 화이트/크림 계열 ---
+            "화이트":     "#FFFFFF",
+            "크림":       "#F2E3C2",
+            "베이지":     "#E8D5B7",
+            # --- 웜 계열 ---
+            "골드":       "#FFD700",
+            "옐로우":     "#F5D000",
+            "오렌지":     "#FF7F00",
+            "레드":       "#E01B24",
+            "핑크":       "#FFAFC5",
+            "브라운":     "#7B4B2A",
+            # --- 퍼플 계열 ---
+            "라벤더":     "#B57EDC",
+            "바이올렛":   "#8A5FD3",
+            "퍼플":       "#7B2D8E",
+            # --- 블루 계열 ---
+            "네이비":     "#1F3864",
+            "아이스블루": "#BEE3F0",
+            "라이트블루": "#7EC8E3",
+            "블루":       "#2058C8",
+            # --- 그린 계열 ---
+            "민트":       "#8FE3CF",
+            "그린":       "#1F9E4F",
+        }
+        DEFAULT_COLOR = "#9E9E9E"  # 팔레트에 없는 색 → 회색(파랑으로 오인 방지)
+
+        # 부분일치 검사 시 긴 이름부터 확인 (라이트블루가 블루보다 먼저 걸리도록)
+        _SORTED_COLOR_KEYS = sorted(COLOR_PALETTE.keys(), key=len, reverse=True)
+
+        def _get_luminance(hex_code):
+            """0(검정) ~ 1(흰색) 사이의 밝기값 반환"""
+            h = hex_code.lstrip('#')
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
         def get_real_color(korean_color):
-            if pd.isna(korean_color): return '#3388ff', '#000000'
-            c = str(korean_color).lower()
-            if '블랙' in c or 'black' in c: return '#000000', '#FFFFFF' 
-            elif '화이트' in c or 'white' in c or '실버' in c: return '#FFFFFF', '#000000' 
-            elif '그레이' in c or '티타늄' in c: return '#808080', '#000000' 
-            elif '블루' in c: return '#0000FF', '#FFFFFF' 
-            elif '핑크' in c: return '#FFC0CB', '#000000' 
-            elif '그린' in c: return '#008000', '#FFFFFF' 
-            elif '골드' in c or '옐로우' in c: return '#FFD700', '#000000' 
-            elif '퍼플' in c or '바이올렛' in c or 'violet' in c: return '#800080', '#FFFFFF'
-            elif '레드' in c: return '#FF0000', '#FFFFFF' 
-            return '#3388ff', '#000000'
+            """엑셀 색상명 → (배경 hex, 그 위에 얹을 글자 hex)"""
+            if pd.isna(korean_color):
+                return DEFAULT_COLOR, '#FFFFFF'
+
+            c = str(korean_color).strip().replace(" ", "")
+
+            # 1순위: 정확히 일치
+            hex_c = COLOR_PALETTE.get(c)
+
+            # 2순위: 부분 일치 (긴 이름 우선)
+            if hex_c is None:
+                for key in _SORTED_COLOR_KEYS:
+                    if key in c:
+                        hex_c = COLOR_PALETTE[key]
+                        break
+
+            if hex_c is None:
+                hex_c = DEFAULT_COLOR
+
+            text_c = '#000000' if _get_luminance(hex_c) > 0.6 else '#FFFFFF'
+            return hex_c, text_c
 
         @st.cache_data(ttl="12h", show_spinner=False)
         def load_data_optimized(file):
@@ -1663,8 +1724,11 @@ with main_container.container():
                                 if len(u_cols) == 1:
                                     c_name = u_cols[0]
                                     hex_c, _ = get_real_color(c_name)
-                                    if hex_c.upper() == '#FFFFFF': bg_c, ic_c = "rgba(0,0,0,0.4)", "white"
-                                    else: bg_c, ic_c = "rgba(255,255,255,0.8)", hex_c
+                                    # 변경: 밝은 색은 어두운 배경 위에 올려서 흰 배경에 묻히지 않게 함
+                                    if _get_luminance(hex_c) > 0.75:
+                                        bg_c, ic_c = "rgba(35,35,35,0.75)", hex_c
+                                    else:
+                                        bg_c, ic_c = "rgba(255,255,255,0.85)", hex_c
                                 else: bg_c, ic_c = "transparent; background: linear-gradient(135deg, red, orange, yellow, green, blue, purple)", "white"
 
                                 z = 1000 if st.session_state['clicked_store_name'] == name else 1
