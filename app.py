@@ -1216,21 +1216,100 @@ with main_container.container():
             if isinstance(file, str): df = pd.read_excel(file, dtype=str)
             else: df = pd.read_excel(file, dtype=str)
             
-            # 2. 구글 시트 주소록 로드
-            addr_df = load_sheet("stores", ttl="10m")
-            
-            # 3. 접점코드로 단순 병합
-            target_code_col = next((col for col in df.columns if '접점번호' in str(col) or '접점코드' in str(col)), None)
-            if target_code_col and addr_df is not None and not addr_df.empty:
-                df[target_code_col] = df[target_code_col].astype(str).str.strip()
-                addr_df['접점코드'] = addr_df['접점코드'].astype(str).str.strip()
-                df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
-            
-            # 4. 보유처명 예외 처리 및 [핵심] 기존 데이터 그대로 연결하기!
+                        # =========================================================
+            # 2. 보유처명 정규화 (⚠️ 애칭 매칭 기준이므로 병합보다 먼저)
+            # =========================================================
             boyu_col = next((col for col in df.columns if '보유처' in str(col)), None)
             if boyu_col:
                 df[boyu_col] = df[boyu_col].astype(str).str.strip()
                 df.loc[df[boyu_col].str.contains("반추", na=False), boyu_col] = "반추정보통신"
+                # 애칭 대조용 키 (공백 제거 + 소문자)
+                df['_보유처_키'] = df[boyu_col].str.replace(r"\s+", "", regex=True).str.lower()
+
+            # 헤더 이름으로 먼저 찾고, 못 찾으면 지정한 열 위치로 대체
+            def _pick_col(_df, keywords, fallback_idx):
+                for c in _df.columns:
+                    if any(k in str(c) for k in keywords):
+                        return c
+                if len(_df.columns) > fallback_idx:
+                    return _df.columns[fallback_idx]
+                return None
+
+            df['주소출처'] = "미등록"   # 미등록 / 접점매칭 / 애칭매칭
+
+            # =========================================================
+            # 3. [1차] stores 시트 — 접점번호 기준
+            # =========================================================
+            try:
+                addr_df = load_sheet("stores", ttl="10m")
+            except Exception as e:
+                addr_df = None
+                print(f"[stores 로드 실패] {e}")
+
+            target_code_col = next((col for col in df.columns if '접점번호' in str(col) or '접점코드' in str(col)), None)
+            if target_code_col and addr_df is not None and not addr_df.empty and '접점코드' in addr_df.columns:
+                df[target_code_col] = df[target_code_col].astype(str).str.strip()
+                addr_df = addr_df.copy()
+                addr_df['접점코드'] = addr_df['접점코드'].astype(str).str.strip()
+                addr_df = addr_df.drop_duplicates(subset=['접점코드'], keep='last')
+                df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
+
+                if '사업장주소' in df.columns:
+                    _ok = df['사업장주소'].notna() & (df['사업장주소'].astype(str).str.strip() != "")
+                    df.loc[_ok, '주소출처'] = "접점매칭"
+
+            # 이후 로직이 참조하는 표준 컬럼이 없으면 빈 칸으로 생성
+            for _c in ['사업장주소', 'x좌표', 'y좌표']:
+                if _c not in df.columns:
+                    df[_c] = pd.NA
+
+            # =========================================================
+            # 4. [2차] stores_inside 시트 — 거래처 애칭 기준 (1차 미매칭 건만)
+            #    B열=애칭 / P열=주소 / R열=x좌표 / S열=y좌표
+            # =========================================================
+            try:
+                inside_df = load_sheet("stores_inside", ttl="10m")
+            except Exception as e:
+                inside_df = None
+                print(f"[stores_inside 로드 실패] {e}")
+
+            if boyu_col and inside_df is not None and not inside_df.empty:
+                nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
+                addr_c = _pick_col(inside_df, ['주소'], 15)
+                x_c    = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
+                y_c    = _pick_col(inside_df, ['y좌표', 'Y좌표', '위도'], 18)
+                print(f"[stores_inside 컬럼 감지] 애칭={nick_c} / 주소={addr_c} / x={x_c} / y={y_c}")
+
+                if all([nick_c, addr_c, x_c, y_c]):
+                    ins = inside_df[[nick_c, addr_c, x_c, y_c]].copy()
+                    # 이름 충돌(_x/_y 접미사) 방지를 위해 전용 이름으로 변경
+                    ins.columns = ['_ins_애칭', '_ins_주소', '_ins_x', '_ins_y']
+                    ins['_ins_키'] = (ins['_ins_애칭'].astype(str).str.strip()
+                                        .str.replace(r"\s+", "", regex=True).str.lower())
+                    ins = ins[ins['_ins_키'] != ""]
+                    ins = ins.drop_duplicates(subset=['_ins_키'], keep='last')
+
+                    df = pd.merge(df, ins.drop(columns=['_ins_애칭']),
+                                  left_on='_보유처_키', right_on='_ins_키', how='left')
+
+                    # 1차에서 주소를 못 채운 행 && 애칭이 매칭된 행만 덮어쓰기
+                    need = (df['사업장주소'].isna() | (df['사업장주소'].astype(str).str.strip() == "")) \
+                           & df['_ins_주소'].notna() \
+                           & (df['_ins_주소'].astype(str).str.strip() != "")
+
+                    df.loc[need, '사업장주소'] = df.loc[need, '_ins_주소']
+                    df.loc[need, 'x좌표']     = df.loc[need, '_ins_x']
+                    df.loc[need, 'y좌표']     = df.loc[need, '_ins_y']
+                    df.loc[need, '주소출처']   = "애칭매칭"
+
+                    df = df.drop(columns=['_ins_주소', '_ins_x', '_ins_y', '_ins_키'], errors='ignore')
+                else:
+                    print("[stores_inside] 애칭/주소/좌표 컬럼을 찾지 못했습니다.")
+
+            df = df.drop(columns=['_보유처_키'], errors='ignore')
+
+            # 5. (이하 기존 로직 그대로 유지)
+            if boyu_col:
                 
                 # 🚀 [에러 원인 제거!] 글자 분석 안 함. 구글 시트/엑셀에 있는 '대권역구분', '상권구분'을 그대로 사용!
                 df['대분류_캐시'] = df.get('대권역구분', df.get('대분류', '미분류')).fillna('미분류')
@@ -1261,9 +1340,21 @@ with main_container.container():
                             return get_coordinate_smart_jitter(boyu, coords[0], coords[1])
                     return get_coordinate_priority(boyu, 37.5665, 126.9780)
 
-                coords_series = df.apply(_calc_coord, axis=1)
-                df['cached_lat'] = coords_series.apply(lambda c: c[0])
-                df['cached_lon'] = coords_series.apply(lambda c: c[1])
+                # 🚀 [최적화 ⓑ] 좌표는 (보유처명 + x/y좌표)에만 의존하므로 고유 조합만 계산
+                _key_cols = [boyu_col] + [c for c in ['y좌표', 'x좌표'] if c in df.columns]
+                _k = df[_key_cols[0]].astype(str).fillna("")
+                for _c in _key_cols[1:]:
+                    _k = _k + "||" + df[_c].astype(str).fillna("")
+                df['_좌표키'] = _k
+
+                _uniq = df.drop_duplicates(subset=['_좌표키'])[['_좌표키'] + _key_cols].copy()
+                _res = _uniq.apply(_calc_coord, axis=1)
+                _uniq['cached_lat'] = _res.apply(lambda c: c[0])
+                _uniq['cached_lon'] = _res.apply(lambda c: c[1])
+
+                df['cached_lat'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['cached_lat'])))
+                df['cached_lon'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['cached_lon'])))
+                df = df.drop(columns=['_좌표키'], errors='ignore')
                 
                 # 집단구분이 있다면 대분류에 편입 (UI 필터 연동용)
                 if '집단구분' in df.columns:
@@ -1712,7 +1803,21 @@ with main_container.container():
                             m.get_root().html.add_child(Element(mobile_js))
                             
                             # [주의] 사내망 방화벽 충돌을 막기 위해 클러스터링(MarkerCluster)을 제거하고 원복했습니다.
-                            groups = map_df.groupby(['cached_lat', 'cached_lon', real_boyu])
+
+                            # 🚀 [최적화 ⓐ] 마커마다 groupby를 반복하지 않도록 전체를 한 번에 집계
+                            _agg_cols = [real_model]
+                            if real_color:  _agg_cols.append(real_color)
+                            if real_type:   _agg_cols.append(real_type)
+                            if real_status: _agg_cols.append(real_status)
+                            if real_target: _agg_cols.append(real_target)
+
+                            _grp_keys = ['cached_lat', 'cached_lon', real_boyu]
+                            _summary_all = (map_df.groupby(_grp_keys + _agg_cols, dropna=False)
+                                                  .size().reset_index(name='count'))
+                            _summary_map = {k: v for k, v in _summary_all.groupby(_grp_keys, dropna=False)}
+                            _empty_summary = _summary_all.iloc[0:0]
+
+                            groups = map_df.groupby(_grp_keys)
 
                             for (lat, lon, name), g in groups:
                                 if pd.isna(lat) or pd.isna(lon):
@@ -1760,14 +1865,8 @@ with main_container.container():
                                 # [핵심 수정] 복사될 텍스트의 첫 줄에 "반추 재고요청드립니다" 추가
                                 copy_text_lines = ["반추 재고요청드립니다", f"[{popup_title}]", f"📍 {address_txt}", ""]
                                 
-                                # --- [수정] 모델유형을 그룹화 기준에 추가 ---
-                                agg_cols = [real_model]
-                                if real_color: agg_cols.append(real_color)
-                                if real_type: agg_cols.append(real_type) # 👈 [추가]
-                                if real_status: agg_cols.append(real_status)
-                                if real_target: agg_cols.append(real_target)
-                                
-                                summary_g = g.groupby(agg_cols, dropna=False).size().reset_index(name='count')
+                                # --- [최적화] 루프 밖에서 미리 집계해둔 결과를 조회만 함 ---
+                                summary_g = _summary_map.get((lat, lon, name), _empty_summary)
                                 
                                 for _, r in summary_g.iterrows():
                                     cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
