@@ -1345,7 +1345,7 @@ with main_container.container():
                     '원텔레콤': '수도권서남',
                     '용인신갈': '수도권남부',
                 }
-                }
+
                 _DAE_KEYS = sorted(DAE_ALIAS.keys(), key=len, reverse=True)  # 긴 키워드 우선
                 _NULLS = {'', 'nan', 'none', '<na>', 'null', '-', '미분류'}
 
