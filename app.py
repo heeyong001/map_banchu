@@ -1311,9 +1311,103 @@ with main_container.container():
             # 5. (이하 기존 로직 그대로 유지)
             if boyu_col:
                 
-                # 🚀 [에러 원인 제거!] 글자 분석 안 함. 구글 시트/엑셀에 있는 '대권역구분', '상권구분'을 그대로 사용!
-                df['대분류_캐시'] = df.get('대권역구분', df.get('대분류', '미분류')).fillna('미분류')
-                df['소분류_캐시'] = df.get('상권구분', df.get('소분류', '미분류')).fillna('미분류')
+                # =========================================================
+                # 대분류 확정 카테고리 매핑
+                #   1순위: 시트('대권역구분') 값을 확정 명칭으로 정규화
+                #   2순위: 값이 없을 때만 보유처명에서 추출
+                # =========================================================
+                CANONICAL_DAE = [
+                    '사무실(반추정보통신)', '범인천', '수도권남부', '수도권동남',
+                    '수도권동북', '수도권서남', '수도권서북', '집단상가', '강원',
+                ]
+
+                # ⚠️ 도매 계정(도매-○○○)을 넣을 카테고리. 확정 목록에 없어 기본 미분류.
+                WHOLESALE_DAE = '미분류'
+
+                # 구/약식 표기 → 확정 명칭
+                DAE_ALIAS = {
+                    '사무실(반추정보통신)': '사무실(반추정보통신)',
+                    '반추정보통신': '사무실(반추정보통신)',
+                    '반추':   '사무실(반추정보통신)',
+                    '사무실': '사무실(반추정보통신)',
+                    '본사':   '사무실(반추정보통신)',
+                    '범인천': '범인천',      '인천': '범인천',
+                    '수도권남부': '수도권남부', '남부': '수도권남부',
+                    '수도권동남': '수도권동남', '동남': '수도권동남',
+                    '수도권동북': '수도권동북', '동북': '수도권동북',
+                    '수도권서남': '수도권서남', '서남': '수도권서남',
+                    '수도권서북': '수도권서북', '서북': '수도권서북',
+                    '집단상가': '집단상가', '테크노마트': '집단상가',
+                    '강변TM': '집단상가',   '신도림TM': '집단상가',
+                    '강원': '강원',
+                    '미리별': '수도권서남',        # ← 실제 권역으로
+                    '세명네트웍스': '수도권서남',
+                    '원텔레콤': '수도권서남',
+                    '용인신갈': '수도권남부',
+                }
+                }
+                _DAE_KEYS = sorted(DAE_ALIAS.keys(), key=len, reverse=True)  # 긴 키워드 우선
+                _NULLS = {'', 'nan', 'none', '<na>', 'null', '-', '미분류'}
+
+                def _canon_dae(value):
+                    """임의 문자열 → 확정 카테고리. 못 찾으면 None"""
+                    v = str(value).strip()
+                    if v.lower() in _NULLS:
+                        return None
+                    if v in CANONICAL_DAE:
+                        return v
+                    for k in _DAE_KEYS:
+                        if k in v:
+                            return DAE_ALIAS[k]
+                    return None
+
+                def _resolve_region_from_name(name):
+                    """보유처명에서 확정 카테고리 추출"""
+                    n = str(name).strip()
+                    toks = [t.strip() for t in n.split('-') if t.strip()]
+                    # 1) 하이픈 토큰 완전일치 (지명 오인 방지, 최우선)
+                    for t in toks:
+                        if t in CANONICAL_DAE:
+                            return t
+                        if t in DAE_ALIAS:
+                            return DAE_ALIAS[t]
+                    # 2) 본사 / 집단상가 (이름 전체에서 탐색)
+                    for k in ('반추', '강변TM', '신도림TM', '테크노마트'):
+                        if k in n:
+                            return DAE_ALIAS[k]
+                    # 3) 토큰 내부 부분일치 (접두 코드가 붙은 경우)
+                    for t in toks:
+                        r = _canon_dae(t)
+                        if r:
+                            return r
+                    # 4) 도매 계정
+                    if '도매' in n:
+                        return WHOLESALE_DAE
+                    return '미분류'
+
+                def _clean_series(col_names):
+                    """컬럼을 읽되 빈문자/공백/'nan' 문자열을 전부 결측으로 통일"""
+                    for c in col_names:
+                        if c in df.columns:
+                            s = df[c].astype(str).str.strip()
+                            return s.mask(s.str.lower().isin(_NULLS), pd.NA)
+                    return pd.Series(pd.NA, index=df.index, dtype='object')
+
+                # --- 대분류 ---
+                _dae_raw = _clean_series(['대권역구분', '대분류'])
+                _dae = pd.Series(
+                    [_canon_dae(v) if pd.notna(v) else None for v in _dae_raw],
+                    index=df.index, dtype='object'
+                )
+                _need_dae = _dae.isna()
+                if _need_dae.any():
+                    _name_map = {n: _resolve_region_from_name(n)
+                                 for n in df.loc[_need_dae, boyu_col].unique()}
+                    _dae = _dae.mask(_need_dae, df[boyu_col].map(_name_map))
+                df['대분류_캐시'] = _dae.fillna('미분류')
+
+                # --- 소분류 (기존 로직 유지) ---
+                df['소분류_캐시'] = _clean_series(['상권구분', '소분류']).fillna('미분류')
                 df['소분류_유추불가'] = (df['소분류_캐시'] == '미분류') & (df['대분류_캐시'] != '미분류')
                 
                 # 지도에 뿌려줄 좌표 연결 (Jittering 미세 분산 처리만 살짝 적용)
@@ -1587,7 +1681,9 @@ with main_container.container():
                 c_region_dae, c_region_so, c_owner = st.columns(3)
                 
                 with c_region_dae:
-                    all_dae = sorted([x for x in df['대분류_캐시'].unique() if x != "미분류"])
+                    _present = set(df['대분류_캐시'].unique())
+                    all_dae = [x for x in CANONICAL_DAE if x in _present]
+                    all_dae += sorted([x for x in _present if x not in CANONICAL_DAE and x != "미분류"])
                     
                     if "강원" in all_dae:
                         all_dae.remove("강원")
