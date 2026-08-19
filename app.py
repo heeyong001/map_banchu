@@ -33,6 +33,15 @@ from streamlit_gsheets import GSheetsConnection
 # ⚠️ 본인의 구글 시트 주소 ID로 반드시 변경하세요!
 GSHEET_URL = "https://docs.google.com/spreadsheets/d/1MtU3hxtUHLS3zT6NoOdsJe-yxJ2tETwfju_hi15U9vI/edit#gid=0"
 
+
+# ==============================================================================
+# 대분류 확정 카테고리 (여러 함수에서 공유하므로 모듈 레벨에 둠)
+# ==============================================================================
+CANONICAL_DAE = [
+    '사무실(반추정보통신)', '범인천', '수도권남부', '수도권동남',
+    '수도권동북', '수도권서남', '수도권서북', '집단상가', '강원',
+]
+
 @st.cache_resource
 def get_gsheets_connection():
     return st.connection("gsheets", type=GSheetsConnection)
@@ -1316,10 +1325,7 @@ with main_container.container():
                 #   1순위: 시트('대권역구분') 값을 확정 명칭으로 정규화
                 #   2순위: 값이 없을 때만 보유처명에서 추출
                 # =========================================================
-                CANONICAL_DAE = [
-                    '사무실(반추정보통신)', '범인천', '수도권남부', '수도권동남',
-                    '수도권동북', '수도권서남', '수도권서북', '집단상가', '강원',
-                ]
+                
 
                 # ⚠️ 도매 계정(도매-○○○)을 넣을 카테고리. 확정 목록에 없어 기본 미분류.
                 WHOLESALE_DAE = '미분류'
