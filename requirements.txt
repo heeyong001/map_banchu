@@ -3,6 +3,6 @@ pandas
 folium
 streamlit-folium
 branca
-st-gsheets-connection
+st-gsheets-connection==0.1.0
 streamlit-cookies-controller
 openpyxl
