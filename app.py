@@ -507,6 +507,10 @@ if not st.session_state['logged_in']:
     /* 로그인 화면에서는 사이드바를 통째로 숨김 */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
+
+    /* 구글시트 캐시 로딩 시 뜨는 영문 "Running ..." 안내 숨김 */
+    [data-testid="stSpinner"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
     """
 
 css_to_inject += "</style>"
@@ -613,8 +617,22 @@ if not st.session_state['logged_in']:
 
             if submit_button:
                 if username and password:
-                    users_df = load_sheet("users", ttl="10m")
-                    user_match = users_df[users_df['username'] == username]
+                    # 🔐 영문 "Running ..." 대신 한글 안내를 화면 중앙에 표시
+                    _login_ph = st.empty()
+                    _login_ph.markdown("""
+                        <div style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
+                            <h3 style='color:#D4AF37; margin-bottom: 15px;'>🔐 로그인 중입니다...</h3>
+                            <p style='color:#728A7C; margin: 0;'>계정 정보를 확인하고 있습니다.</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    try:
+                        users_df = load_sheet("users", ttl="10m")
+                        user_match = users_df[users_df['username'] == username]
+                    except Exception as _le:
+                        _login_ph.empty()
+                        st.error(f"⚠️ 계정 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요. ({_le})")
+                        st.stop()
                     
                     if not user_match.empty and check_hashes(password, user_match.iloc[0]['password']):
                         st.session_state['logged_in'] = True
@@ -632,6 +650,7 @@ if not st.session_state['logged_in']:
                         st.success("✅ 로그인 성공! 대시보드로 이동합니다.")
                         st.rerun()
                     else:
+                        _login_ph.empty()
                         st.error("⚠️ 아이디 또는 비밀번호가 일치하지 않습니다.")
     st.stop()
 
@@ -2271,7 +2290,7 @@ with main_container.container():
                                 r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-' 
                                 
                                 # [수정] 문자열 조립 시 r_col(색상)과 r_stat(상태) 사이에 r_typ(유형)을 끼워넣음
-                                det = f"{r_mod} | {r_col} | {r_typ} | {r_stat} | {r_tgt} | {r_serial}"
+                                det = f"{r_mod} | {r_col} | {r_typ} | {r_stat} | {r_tgt} | 일련 : {r_serial}"
                                 
                                 is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
                                 prefix = "✅ " if is_selected else ""
