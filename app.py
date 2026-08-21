@@ -111,8 +111,7 @@ def get_lat_lon(address, existing_x=None, existing_y=None):
             if data['addresses']:
                 return float(data['addresses'][0]['y']), float(data['addresses'][0]['x'])
         return None, None
-        except Exception as e:
-            print(f"[append 실패] {type(e).__name__}: {e}")   # 확인 후 원복
+    except Exception as e:  # 👈 [핵심] 이 부분을 명확하게 변경하여 에러 원천 차단
         return None, None
         
 # 1. 화면 설정
