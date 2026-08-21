@@ -575,10 +575,11 @@ if not st.session_state['logged_in']:
         
         # 🚀 [잔상 완벽 해결] position: fixed 를 사용해 화면 중앙에 '로딩 박스'를 띄웁니다.
         # 프론트엔드 오류로 글자가 2번 출력되더라도 완벽하게 겹치므로 절대 2줄로 보이지 않습니다!
-        st.markdown("""
+        st.markdown(f"""
             <div style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
                 <h3 style='color:#D4AF37; margin-bottom: 15px;'>🔄 잠시만 기다려주세요...</h3>
                 <p style='color:#728A7C; margin: 0;'>안전한 접속을 위해 잠시만 기다려주세요.</p>
+                <p style='color:#3E5147; margin: 8px 0 0 0; font-size: 11px;'>{current_wait_count + 1} / {len(COOKIE_WAIT_STEPS)}</p>
             </div>
         """, unsafe_allow_html=True)
         
@@ -683,6 +684,9 @@ with st.sidebar: # 👈 기존에 있던 코드
         cookie_controller.remove('auth_token')
         cookie_controller.remove('auth_user')
         cookie_controller.remove('auth_role')
+
+        # 🚀 방금 쿠키를 지웠으므로 쿠키 대기 루프(약 2.7초)를 건너뜁니다.
+        st.session_state['cookie_wait_count'] = 99
 
         time.sleep(0.5) 
         st.rerun()
