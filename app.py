@@ -561,9 +561,12 @@ def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model
 # ==============================================================================
 if not st.session_state['logged_in']:
     
+    # 💡 쿠키가 준비되는 즉시 빠져나가도록 대기 간격을 점진적으로 늘립니다.
+    #    (첫 바퀴 0.6초 — 모바일 통신 겹침 방지를 위해 보수적으로 설정)
+    COOKIE_WAIT_STEPS = [0.6, 0.9, 1.2]
     current_wait_count = st.session_state.get('cookie_wait_count', 0)
     
-    if current_wait_count < 3:
+    if current_wait_count < len(COOKIE_WAIT_STEPS):
         st.session_state['cookie_wait_count'] = current_wait_count + 1
         
         # 🚀 [잔상 완벽 해결] position: fixed 를 사용해 화면 중앙에 '로딩 박스'를 띄웁니다.
@@ -575,8 +578,8 @@ if not st.session_state['logged_in']:
             </div>
         """, unsafe_allow_html=True)
         
-        # 💡 0.5초는 모바일 환경에서 애매하게 통신이 겹쳐서 오류를 유발하므로 1초로 늘려줍니다.
-        time.sleep(1.0) 
+        # 💡 첫 바퀴는 0.6초로 짧게, 이후 점차 늘려 통신 겹침을 방지합니다. (0.6 → 0.9 → 1.2)
+        time.sleep(COOKIE_WAIT_STEPS[current_wait_count])
         
         # 삭제(empty) 코드 없이 바로 새로고침합니다.
         st.rerun()
@@ -954,6 +957,36 @@ with main_container.container():
                             raw_df = pd.read_excel(DATA_FILE, dtype=str)
                             raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
                             db_df = load_sheet("stores", ttl="10m")
+
+                            # --- stores_inside(애칭 기준) 도 함께 로드 ---
+                            def _pick_col(_df, keywords, fallback_idx):
+                                for c in _df.columns:
+                                    if any(k in str(c) for k in keywords):
+                                        return c
+                                if len(_df.columns) > fallback_idx:
+                                    return _df.columns[fallback_idx]
+                                return None
+
+                            def _norm_key(v):
+                                return str(v).strip().replace(" ", "").lower()
+
+                            inside_map = {}   # 정규화된 애칭 -> (주소, x좌표)
+                            try:
+                                inside_df = load_sheet("stores_inside", ttl="10m")
+                                if inside_df is not None and not inside_df.empty:
+                                    nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
+                                    addr_c = _pick_col(inside_df, ['주소'], 15)
+                                    x_c    = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
+                                    if all([nick_c, addr_c, x_c]):
+                                        for _, _r in inside_df.iterrows():
+                                            _k = _norm_key(_r[nick_c])
+                                            if _k and _k != 'nan':
+                                                inside_map[_k] = (
+                                                    str(_r[addr_c]).strip(),
+                                                    str(_r[x_c]).strip().lower(),
+                                                )
+                            except Exception as _e:
+                                st.info(f"ℹ️ stores_inside 시트를 읽지 못했습니다. stores 기준으로만 판정합니다. ({_e})")
                             
                             boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
                             code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
@@ -967,24 +1000,50 @@ with main_container.container():
 
                                 # 중복 제거 (이름과 코드 조합 기준)
                                 raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col, code_col]).copy()
-                                db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip() 
-                                
+                                db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip()
+
+                                def _check_inside(row):
+                                    """stores_inside 애칭 매칭 결과. 정상이면 'OK', 미등록이면 None"""
+                                    info = inside_map.get(_norm_key(row[boyu_col]))
+                                    if info is None:
+                                        return None
+                                    addr, x_val = info
+                                    if not addr or addr == 'nan':
+                                        return "📍 stores_inside에 애칭은 있으나 주소(P열)가 비어 있습니다."
+                                    if not x_val or x_val in ('nan', 'none'):
+                                        return "🌐 stores_inside에 주소는 있으나 좌표(R/S열)가 비어 있습니다."
+                                    return "OK"
+
                                 def get_unmatch_reason(row):
                                     code = str(row[code_col]).strip()
+
+                                    # 1) 엑셀에 접점번호가 없는 경우 → 애칭으로 재확인
                                     if not code or code.lower() in ['nan', 'none', 'n/a', '']:
-                                        return "❌ 엑셀 재고표에 접점번호가 누락되었습니다 (n/a)."
-                                        
+                                        r = _check_inside(row)
+                                        if r == "OK": return None
+                                        if r: return r
+                                        return "❌ 엑셀 재고표에 접점번호가 없고, stores_inside 애칭에도 없습니다."
+
+                                    # 2) stores에 접점코드가 없는 경우 → 애칭으로 재확인
                                     match = db_df[db_df['접점코드'] == code]
-                                    if match.empty: 
-                                        return "❌ 주소록 DB에 등록되지 않은 접점코드입니다."
-                                    
+                                    if match.empty:
+                                        r = _check_inside(row)
+                                        if r == "OK": return None
+                                        if r: return r
+                                        return "❌ stores·stores_inside 어디에도 등록되지 않았습니다."
+
+                                    # 3) stores에는 있으나 주소/좌표가 빈 경우 → 애칭이 대신 채워주는지 확인
                                     m_row = match.iloc[0]
                                     addr = str(m_row.get('사업장주소', '')).strip()
                                     x_val = str(m_row.get('x좌표', '')).strip().lower()
-                                    
-                                    if not addr or addr == 'nan': return "📍 DB에 등록은 되어있으나 주소 정보가 누락되었습니다."
-                                    if not x_val or x_val == 'nan' or x_val == 'none': return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
-                                    return None 
+
+                                    if not addr or addr == 'nan':
+                                        if _check_inside(row) == "OK": return None
+                                        return "📍 stores에 등록은 되어있으나 주소 정보가 누락되었습니다."
+                                    if not x_val or x_val in ('nan', 'none'):
+                                        if _check_inside(row) == "OK": return None
+                                        return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
+                                    return None
 
                                 raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
                                 unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
@@ -1235,9 +1294,18 @@ with main_container.container():
 
         @st.cache_data(ttl="12h", show_spinner=False)
         def load_data_optimized(file):
-            # 1. 엑셀 데이터 로드
-            if isinstance(file, str): df = pd.read_excel(file, dtype=str)
-            else: df = pd.read_excel(file, dtype=str)
+            # 1. 데이터 로드 (parquet 캐시 우선, 없거나 실패하면 엑셀)
+            df = None
+            if isinstance(file, str):
+                _pq = os.path.splitext(file)[0] + '.parquet'
+                if os.path.exists(_pq):
+                    try:
+                        df = pd.read_parquet(_pq)
+                    except Exception as _e:
+                        print(f"[parquet 읽기 실패 → 엑셀로 대체] {_e}")
+                        df = None
+            if df is None:
+                df = pd.read_excel(file, dtype=str)
             
                         # =========================================================
             # 2. 보유처명 정규화 (⚠️ 애칭 매칭 기준이므로 병합보다 먼저)
@@ -1479,9 +1547,10 @@ with main_container.container():
 
         # =========================================================
         # 메인 UI
-        # =========================================================
+        # =========================================================     
         DATA_FILE = 'inventory_data.xlsx'
         META_FILE = 'file_info.txt' 
+        CACHE_FILE = 'inventory_data.parquet'   # 🚀 빠른 재로딩용 캐시
 
         # 1. 사이드바: 파일 업로드
         with st.sidebar:
@@ -1491,6 +1560,7 @@ with main_container.container():
             if st.button("🗑️ 데이터 초기화", type="secondary"):
                 if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
                 if os.path.exists(META_FILE): os.remove(META_FILE)
+                if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
                 st.session_state.clear()
                 st.rerun()
 
@@ -1504,6 +1574,13 @@ with main_container.container():
                     with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
                     with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
                     
+                    # 🚀 parquet 캐시 생성 (실패 시 반드시 삭제 → 옛 데이터 잔존 방지)
+                    try:
+                        pd.read_excel(DATA_FILE, dtype=str).to_parquet(CACHE_FILE, index=False)
+                    except Exception as _pe:
+                        if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
+                        print(f"[parquet 캐시 생성 실패 → 엑셀로 동작] {_pe}")
+
                     st.session_state['last_uploaded'] = current_file_id
                     st.success("저장 완료")
                     st.cache_data.clear()
@@ -1676,13 +1753,24 @@ with main_container.container():
                 c_model, c_dae, c_color = st.columns(3)
 
                 with c_model:
+                    # 🚀 [URL 복원] 이전 조회 조건 (보유처는 URL 길이 문제로 저장하지 않음)
+                    def _qp_list(_key):
+                        try:
+                            return [str(v) for v in st.query_params.get_all(_key) if str(v).strip()]
+                        except Exception:
+                            return []
+                    _init_models = _qp_list('m')
+                    _init_dae    = _qp_list('d')
+                    _init_colors = _qp_list('c')
+
                     # 1. 엑셀에 존재하는 순수 모델명들을 중복 없이 가져와서 정렬합니다.
                     raw_models = df[real_model].dropna().unique().tolist()
                     display_options = [str(m) for m in raw_models]
                     display_options.sort()
 
                     # 2. 그룹화 변환 로직 없이, 선택된 모델명들을 그대로 변수에 담습니다!
-                    selected_models = st.multiselect("모델", display_options, placeholder="선택하세요")
+                    selected_models = st.multiselect("모델", display_options, placeholder="선택하세요",
+                                                     default=[x for x in _init_models if x in display_options])
 
                 with c_dae:
                     _present = set(df['대분류_캐시'].unique())
@@ -1696,7 +1784,8 @@ with main_container.container():
                     if "사무실(반추정보통신)" not in all_dae:
                         all_dae.insert(0, "사무실(반추정보통신)")
 
-                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
+                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체",
+                                                  default=[x for x in _init_dae if x in all_dae])
 
                 with c_color:
                     if real_color:
@@ -1708,7 +1797,8 @@ with main_container.container():
                         else:
                             sorted_colors = sorted(df[real_color].dropna().unique().tolist())
 
-                        selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
+                        selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder,
+                                                         default=[x for x in _init_colors if x in sorted_colors])
                     else:
                         st.write("-")
 
@@ -1820,7 +1910,18 @@ with main_container.container():
                     st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
                     st.session_state['selected_idx'] = None
                     st.session_state['clicked_store_name'] = None
-                    # 💡 버튼이 Fragment 밖에 있으므로 더 이상 st.rerun() 이중 새로고침이 필요 없습니다. (실행 속도 향상!)    
+
+                    # 🚀 [URL 저장] 모바일 복귀 시 조건 복원용 (보유처 제외 — URL 길이 초과 방지)
+                    try:
+                        _qp_new = {}
+                        if s_models: _qp_new['m'] = list(s_models)
+                        if s_dae:    _qp_new['d'] = list(s_dae)
+                        if s_colors: _qp_new['c'] = list(s_colors)
+                        st.query_params.clear()
+                        if _qp_new:
+                            st.query_params.update(_qp_new)
+                    except Exception as _qe:
+                        print(f"[URL 저장 실패] {_qe}")
 
         # 4. 결과 출력
         # 🚀 [최적화 2] 결과 화면(지도+리스트)을 독립된 구역(Fragment)으로 분리
