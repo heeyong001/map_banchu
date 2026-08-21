@@ -50,22 +50,36 @@ def load_sheet(sheet_name, ttl="5m"):
     conn = get_gsheets_connection()
     return conn.read(spreadsheet=GSHEET_URL, worksheet=sheet_name, ttl=ttl)
 
-def save_sheet(df, sheet_name):
+def save_sheet(df, sheet_name, clear_cache=True):
     conn = get_gsheets_connection()
     conn.update(spreadsheet=GSHEET_URL, worksheet=sheet_name, data=df)
-    st.cache_data.clear()
+    if clear_cache:
+        st.cache_data.clear()
 
 def add_audit_log(username, action, details=""):
     import threading
+
     def _write():
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1) append 방식: 시트 전체를 읽지 않고 마지막 줄에만 덧붙임
+        try:
+            conn = get_gsheets_connection()
+            ws = conn.client._open_spreadsheet(spreadsheet=GSHEET_URL).worksheet("logs")
+            ws.append_row([now, username, action, details], value_input_option="USER_ENTERED")
+            return
+        except Exception:
+            pass
+
+        # 2) append 실패 시에만 기존 방식으로 폴백 (캐시는 지우지 않음)
         try:
             log_df = load_sheet("logs", ttl=0)
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{"발생시간": now, "작업자": username, "작업유형": action, "상세내역": details}])
             updated_log = pd.concat([log_df, new_row], ignore_index=True)
-            save_sheet(updated_log, "logs")
-        except:
+            save_sheet(updated_log, "logs", clear_cache=False)
+        except Exception:
             pass
+
     threading.Thread(target=_write, daemon=True).start()
 
 # ==============================================================================
@@ -97,7 +111,8 @@ def get_lat_lon(address, existing_x=None, existing_y=None):
             if data['addresses']:
                 return float(data['addresses'][0]['y']), float(data['addresses'][0]['x'])
         return None, None
-    except Exception as e:  # 👈 [핵심] 이 부분을 명확하게 변경하여 에러 원천 차단
+        except Exception as e:
+            print(f"[append 실패] {type(e).__name__}: {e}")   # 확인 후 원복
         return None, None
         
 # 1. 화면 설정
@@ -1657,16 +1672,32 @@ with main_container.container():
             # 🚀 [추가] 검색창 구역만 따로 새로고침되도록 격리 (화면 깜빡임 원천 차단)
             @st.fragment
             def search_filter_section():
-                c_model, c_color = st.columns(2)
-                
+                selected_colors = []   # real_color가 없는 경우 대비 (NameError 방지)
+
+                c_model, c_dae, c_color = st.columns(3)
+
                 with c_model:
                     # 1. 엑셀에 존재하는 순수 모델명들을 중복 없이 가져와서 정렬합니다.
                     raw_models = df[real_model].dropna().unique().tolist()
                     display_options = [str(m) for m in raw_models]
                     display_options.sort()
-                    
+
                     # 2. 그룹화 변환 로직 없이, 선택된 모델명들을 그대로 변수에 담습니다!
                     selected_models = st.multiselect("모델", display_options, placeholder="선택하세요")
+
+                with c_dae:
+                    _present = set(df['대분류_캐시'].unique())
+                    all_dae = [x for x in CANONICAL_DAE if x in _present]
+                    all_dae += sorted([x for x in _present if x not in CANONICAL_DAE and x != "미분류"])
+
+                    if "강원" in all_dae:
+                        all_dae.remove("강원")
+                        all_dae.append("강원")
+
+                    if "사무실(반추정보통신)" not in all_dae:
+                        all_dae.insert(0, "사무실(반추정보통신)")
+
+                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
 
                 with c_color:
                     if real_color:
@@ -1674,32 +1705,15 @@ with main_container.container():
                         if selected_models:
                             filtered_df = df[df[real_model].isin(selected_models)]
                             sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
-                            
-                            # 🚀 [에러 해결] 없어진 옛날 이름 대신, 현재 모델이 담긴 selected_models 변수를 사용합니다!
-                            color_placeholder = f"💡 {selected_models[0]} 등 선택하신 모델의 색상을 선택해주세요. (미선택 시 전체 조회)"
-                            
+                            color_placeholder = f"💡 {selected_models[0]}의 색상 선택 (미선택 시 전체)"
                         else:
                             sorted_colors = sorted(df[real_color].dropna().unique().tolist())
-                        
+
                         selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder)
                     else:
                         st.write("-")
 
-                c_region_dae, c_region_so, c_owner = st.columns(3)
-                
-                with c_region_dae:
-                    _present = set(df['대분류_캐시'].unique())
-                    all_dae = [x for x in CANONICAL_DAE if x in _present]
-                    all_dae += sorted([x for x in _present if x not in CANONICAL_DAE and x != "미분류"])
-                    
-                    if "강원" in all_dae:
-                        all_dae.remove("강원")
-                        all_dae.append("강원")
-                        
-                    if "사무실(반추정보통신)" not in all_dae:
-                        all_dae.insert(0, "사무실(반추정보통신)")
-                        
-                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체")
+                c_region_so, c_owner = st.columns(2)
                     
                 with c_region_so:
                     if selected_dae:
@@ -1792,6 +1806,7 @@ with main_container.container():
                     st.session_state['filtered_data'] = None 
                 else:
                     st.session_state['search_clicked'] = True
+                    st.session_state['_searching'] = True   # 결과 렌더링까지 스피너 유지용
                     
                     list_res, map_res = get_cached_search_results(
                         df, 
@@ -2169,4 +2184,8 @@ with main_container.container():
                 else:
                     st.warning("조건에 맞는 결과가 없습니다.")
 
-        display_results_section()       
+        if st.session_state.pop('_searching', False):
+            with st.spinner("🔍 조회 중입니다..."):
+                display_results_section()
+        else:
+            display_results_section()            
