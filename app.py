@@ -1987,7 +1987,7 @@ with main_container.container():
                                     t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{typ}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
                                     
                                     # [수정] 복사하기 텍스트에도 유형(typ) 추가
-                                    copy_text_lines.append(f"{r[real_model]} | {cn} | {typ} | {stt} | {tgt}")
+                                    copy_text_lines.append(f"{r[real_model]} | {cn}")
                                     
                                 # 1. 기본 복사 텍스트 세팅
                                 copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
