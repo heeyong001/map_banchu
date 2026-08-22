@@ -404,6 +404,19 @@ st.markdown("""
         font-size: 18px !important;      /* 👈 글자 크기도 시원하게 키울 수 있습니다 */
         padding: 5px 15px !important;
     }
+        /* 🚀 ① 탭 즉시 반응 — 서버 왕복 없이 브라우저가 바로 반응합니다 */
+    div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button:active,
+    div.element-container:has(.search-btn-marker) + div button:active {
+        background-color: #D4AF37 !important;
+        border-color: #D4AF37 !important;
+        color: #0E1B14 !important;
+        transform: scale(0.97);
+    }
+    div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
+        transition: background-color 0.08s, border-color 0.08s, transform 0.08s;
+        -webkit-tap-highlight-color: rgba(212,175,55,0.35);
+    }
+
     /* 🚀 [업데이트] 우측 하단 Streamlit 기본 로고 및 워터마크 완벽 숨김 */
     footer { visibility: hidden !important; display: none !important; }
 
@@ -1904,6 +1917,8 @@ with main_container.container():
             # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
             
+            _btn_css = st.empty()   # 실행 중 버튼 문구 변경용 (렌더 완료 후 원복)
+            
             if st.button("🚀 조회하기", use_container_width=True):
                 # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
                 s_models = st.session_state.get('tmp_selected_models', [])
@@ -1919,6 +1934,26 @@ with main_container.container():
                 else:
                     st.session_state['search_clicked'] = True
                     st.session_state['_searching'] = True   # 결과 렌더링까지 스피너 유지용
+
+                    # ② 실행 중 — 버튼 문구 변경 + 중복 클릭 차단
+                    _btn_css.markdown("""
+                        <style>
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
+                            border: 2px solid #D4AF37 !important;
+                            background-color: rgba(212,175,55,0.15) !important;
+                            pointer-events: none !important;
+                        }
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button p {
+                            display: none !important;
+                        }
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button::after {
+                            content: "🔍 조회하는 중입니다...";
+                            font-size: 18px;
+                            font-weight: 600;
+                            color: #D4AF37;
+                        }
+                        </style>
+                    """, unsafe_allow_html=True)
                     
                     list_res, map_res = get_cached_search_results(
                         df, 
@@ -2311,4 +2346,10 @@ with main_container.container():
             with st.spinner("🔍 조회 중입니다..."):
                 display_results_section()
         else:
-            display_results_section()            
+            display_results_section()
+
+        # 결과 렌더링이 끝났으므로 조회하기 버튼 문구를 원래대로 되돌립니다.
+        try:
+            _btn_css.empty()
+        except NameError:
+            pass
