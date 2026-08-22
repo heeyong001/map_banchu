@@ -1943,11 +1943,22 @@ with main_container.container():
                             background-color: rgba(212,175,55,0.15) !important;
                             pointer-events: none !important;
                         }
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button p {
-                            display: none !important;
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button p,
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button > div,
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button span {
+                            visibility: hidden !important;
+                            position: absolute !important;
+                        }
+                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
+                            position: relative !important;
                         }
                         div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button::after {
                             content: "🔍 조회하는 중입니다...";
+                            position: absolute;
+                            top: 0; left: 0; right: 0; bottom: 0;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
                             font-size: 18px;
                             font-weight: 600;
                             color: #D4AF37;
@@ -2342,11 +2353,9 @@ with main_container.container():
                 else:
                     st.warning("조건에 맞는 결과가 없습니다.")
 
-        if st.session_state.pop('_searching', False):
-            with st.spinner("🔍 조회 중입니다..."):
-                display_results_section()
-        else:
-            display_results_section()
+        # 조회 중 표시는 버튼 자체가 담당하므로 별도 스피너를 쓰지 않습니다.
+        st.session_state.pop('_searching', None)
+        display_results_section()
 
         # 결과 렌더링이 끝났으므로 조회하기 버튼 문구를 원래대로 되돌립니다.
         try:
