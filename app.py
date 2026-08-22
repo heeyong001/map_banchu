@@ -1914,10 +1914,12 @@ with main_container.container():
             # 🚀 검색창(드롭다운) 영역만 독립 실행
             search_filter_section()            
 
+            # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
+            #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
+            _btn_css = st.empty()   # 실행 중 버튼 문구 변경용 (렌더 완료 후 원복)
+
             # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
-            
-            _btn_css = st.empty()   # 실행 중 버튼 문구 변경용 (렌더 완료 후 원복)
             
             if st.button("🚀 조회하기", use_container_width=True):
                 # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
@@ -1937,7 +1939,16 @@ with main_container.container():
 
                     # ② 실행 중 — 버튼 문구 변경 + 중복 클릭 차단
                     _btn_css.markdown("""
+                        <span class="btn-css-slot"></span>
                         <style>
+                        /* CSS만 담는 슬롯이므로 화면에서 완전히 제거 (밀림 방지) */
+                        div[data-testid="stElementContainer"]:has(.btn-css-slot),
+                        div.element-container:has(.btn-css-slot) {
+                            display: none !important;
+                            height: 0px !important;
+                            margin: 0px !important;
+                            padding: 0px !important;
+                        }
                         div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
                             border: 2px solid #D4AF37 !important;
                             background-color: rgba(212,175,55,0.15) !important;
