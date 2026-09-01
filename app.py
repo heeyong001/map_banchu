@@ -1809,12 +1809,48 @@ with main_container.container():
                 # last_uploaded는 기존 업로드 처리 코드에서 생성하는 파일 ID입니다.
                 # 파일이 바뀔 때만 검색 옵션을 다시 생성합니다.
                 # --------------------------------------------------------------
-                current_filter_file = st.session_state.get(
-                    "last_uploaded",
-                    "__current_file__"
+                # 현재 브라우저 세션에서 업로드한 파일 ID
+                current_filter_file = st.session_state.get("last_uploaded")
+
+                # 인터넷 창을 닫았다가 다시 접속하면 session_state가 초기화되어
+                # last_uploaded가 None이 됩니다.
+                # 이 경우 서버에 저장된 재고 파일의 크기와 수정시간으로
+                # 고유한 파일 ID를 다시 생성합니다.
+                if not current_filter_file and os.path.exists(DATA_FILE):
+                    saved_file_stat = os.stat(DATA_FILE)
+
+                    current_filter_file = (
+                        f"saved_inventory_"
+                        f"{saved_file_stat.st_size}_"
+                        f"{saved_file_stat.st_mtime_ns}"
+                    )
+
+                    st.session_state["last_uploaded"] = current_filter_file
+
+                # 저장 파일도 없는 경우
+                if not current_filter_file:
+                    current_filter_file = "__no_inventory_file__"
+
+                # 다음 중 하나라도 해당하면 옵션 목록을 다시 생성합니다.
+                #
+                # 1. 재고 파일이 변경됨
+                # 2. 브라우저 재접속으로 옵션 Session State가 사라짐
+                filter_cache_missing = any(
+                    key not in st.session_state
+                    for key in [
+                        "_filter_model_options",
+                        "_filter_color_options",
+                        "_filter_dae_options",
+                        "_filter_so_options",
+                        "_filter_owner_options",
+                    ]
                 )
 
-                if st.session_state.get("_filter_option_file") != current_filter_file:
+                if (
+                    st.session_state.get("_filter_option_file")
+                    != current_filter_file
+                    or filter_cache_missing
+                ):
 
                     # 모델 목록
                     model_options = sorted(
