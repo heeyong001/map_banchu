@@ -2119,14 +2119,55 @@ with main_container.container():
 
                 with c_color:
                     if real_color:
+
+                        # ------------------------------------------------------
+                        # 선택된 모델에 존재하는 색상만 추출
+                        # ------------------------------------------------------
+                        if selected_models:
+                            color_filter_df = df[
+                                df[real_model]
+                                .astype(str)
+                                .isin([str(v) for v in selected_models])
+                            ]
+
+                            linked_color_options = sorted(
+                                [
+                                    value
+                                    for value in (
+                                        color_filter_df[real_color]
+                                        .dropna()
+                                        .unique()
+                                        .tolist()
+                                    )
+                                    if str(value).strip()
+                                ],
+                                key=lambda value: str(value),
+                            )
+
+                            if len(selected_models) == 1:
+                                color_placeholder = (
+                                    f"{selected_models[0]}의 색상을 선택하세요"
+                                )
+                            else:
+                                color_placeholder = (
+                                    f"선택한 {len(selected_models)}개 모델의 "
+                                    "색상을 선택하세요"
+                                )
+
+                        else:
+                            # 모델 미선택 시에는 전체 색상 표시
+                            linked_color_options = color_options
+                            color_placeholder = "색상을 검색하거나 선택하세요"
+
                         selected_colors = _closed_multiselect(
                             label="색상",
-                            options=color_options,
+                            options=linked_color_options,
                             selected_key="filter_selected_colors",
                             generation_key="filter_generation_color",
                             widget_prefix="filter_multiselect_color",
-                            placeholder="색상을 검색하거나 선택하세요",
+                            placeholder=color_placeholder,
                         )
+
                     else:
                         selected_colors = []
                         st.session_state["filter_selected_colors"] = []
