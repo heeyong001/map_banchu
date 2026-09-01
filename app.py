@@ -1781,138 +1781,408 @@ with main_container.container():
             # 3. 검색창
             st.markdown("---")
 
-            # 🚀 [추가] 검색창 구역만 따로 새로고침되도록 격리 (화면 깜빡임 원천 차단)
+            # ==========================================================================
+            # 검색 필터
+            # selectbox에서 하나를 선택하면 드롭다운을 닫고,
+            # 선택값은 Session State 목록에 누적합니다.
+            # ==========================================================================
+
             @st.fragment
             def search_filter_section():
-                selected_colors = []   # real_color가 없는 경우 대비 (NameError 방지)
 
-                c_model, c_dae, c_color = st.columns(3)
+                # --------------------------------------------------------------
+                # 1. URL에 저장된 다중 조건 읽기
+                # --------------------------------------------------------------
+                def _qp_list(_key):
+                    try:
+                        return [
+                            str(v)
+                            for v in st.query_params.get_all(_key)
+                            if str(v).strip()
+                        ]
+                    except Exception:
+                        return []
 
-                with c_model:
-                    # 🚀 [URL 복원] 이전 조회 조건 (보유처는 URL 길이 문제로 저장하지 않음)
-                    def _qp_list(_key):
-                        try:
-                            return [str(v) for v in st.query_params.get_all(_key) if str(v).strip()]
-                        except Exception:
-                            return []
-                    _init_models = _qp_list('m')
-                    _init_dae    = _qp_list('d')
-                    _init_colors = _qp_list('c')
+                # --------------------------------------------------------------
+                # 2. 현재 업로드 파일이 변경되었는지 확인
+                #
+                # last_uploaded는 기존 업로드 처리 코드에서 생성하는 파일 ID입니다.
+                # 파일이 바뀔 때만 검색 옵션을 다시 생성합니다.
+                # --------------------------------------------------------------
+                current_filter_file = st.session_state.get(
+                    "last_uploaded",
+                    "__current_file__"
+                )
 
-                    # 1. 엑셀에 존재하는 순수 모델명들을 중복 없이 가져와서 정렬합니다.
-                    raw_models = df[real_model].dropna().unique().tolist()
-                    display_options = [str(m) for m in raw_models]
-                    display_options.sort()
+                if st.session_state.get("_filter_option_file") != current_filter_file:
 
-                    # 2. 그룹화 변환 로직 없이, 선택된 모델명들을 그대로 변수에 담습니다!
-                    selected_models = st.multiselect("모델", display_options, placeholder="선택하세요",
-                                                     default=[x for x in _init_models if x in display_options])
+                    # 모델 목록
+                    model_options = sorted(
+                        [
+                            str(v)
+                            for v in df[real_model].dropna().unique().tolist()
+                            if str(v).strip()
+                        ]
+                    )
 
-                with c_dae:
-                    _present = set(df['대분류_캐시'].unique())
-                    all_dae = [x for x in CANONICAL_DAE if x in _present]
-                    all_dae += sorted([x for x in _present if x not in CANONICAL_DAE and x != "미분류"])
-
-                    if "강원" in all_dae:
-                        all_dae.remove("강원")
-                        all_dae.append("강원")
-
-                    if "사무실(반추정보통신)" not in all_dae:
-                        all_dae.insert(0, "사무실(반추정보통신)")
-
-                    selected_dae = st.multiselect("지역(대분류)", all_dae, placeholder="미선택 시 전체",
-                                                  default=[x for x in _init_dae if x in all_dae])
-
-                with c_color:
+                    # 색상 목록
                     if real_color:
-                        color_placeholder = "선택하세요"
-                        if selected_models:
-                            filtered_df = df[df[real_model].isin(selected_models)]
-                            sorted_colors = sorted(filtered_df[real_color].dropna().unique().tolist())
-                            color_placeholder = f"💡 {selected_models[0]}의 색상 선택 (미선택 시 전체)"
-                        else:
-                            sorted_colors = sorted(df[real_color].dropna().unique().tolist())
-
-                        selected_colors = st.multiselect("색상", sorted_colors, placeholder=color_placeholder,
-                                                         default=[x for x in _init_colors if x in sorted_colors])
+                        color_options = sorted(
+                            [
+                                v
+                                for v in df[real_color].dropna().unique().tolist()
+                                if str(v).strip()
+                            ],
+                            key=lambda x: str(x)
+                        )
                     else:
-                        st.write("-")
+                        color_options = []
 
-                c_region_so, c_owner = st.columns(2)
-                    
-                with c_region_so:
-                    if selected_dae:
-                        actual_dae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                        mask_so = df['대분류_캐시'].isin(actual_dae)
-                        if "사무실(반추정보통신)" in selected_dae:
-                            mask_so |= df[real_boyu].astype(str).str.contains("반추", na=False)
-                        so_options_df = df[mask_so]
-                    else:
-                        so_options_df = df
-                        
-                    raw_so = [x for x in so_options_df['소분류_캐시'].unique() if x not in ["미분류", "전체허용"]]
-                    
+                    # 대분류 목록
+                    present_dae = set(
+                        [
+                            v
+                            for v in df["대분류_캐시"].dropna().unique().tolist()
+                            if str(v).strip()
+                        ]
+                    )
+
+                    dae_options = [
+                        x for x in CANONICAL_DAE
+                        if x in present_dae
+                    ]
+
+                    dae_options += sorted(
+                        [
+                            x for x in present_dae
+                            if x not in CANONICAL_DAE and x != "미분류"
+                        ],
+                        key=lambda x: str(x)
+                    )
+
+                    if "강원" in dae_options:
+                        dae_options.remove("강원")
+                        dae_options.append("강원")
+
+                    if "사무실(반추정보통신)" not in dae_options:
+                        dae_options.insert(0, "사무실(반추정보통신)")
+
+                    # 소분류 목록
+                    raw_so = [
+                        x
+                        for x in df["소분류_캐시"].dropna().unique().tolist()
+                        if x not in ["미분류", "전체허용"]
+                        and str(x).strip()
+                    ]
+
                     so_priority = {}
-                    if '사업장주소' in so_options_df.columns:
-                        valid_df = so_options_df.dropna(subset=['사업장주소']).drop_duplicates(subset=['소분류_캐시'])
-                        addr_map = dict(zip(valid_df['소분류_캐시'], valid_df['사업장주소']))
-                        
+
+                    if "사업장주소" in df.columns:
+                        valid_addr_df = (
+                            df.dropna(subset=["사업장주소"])
+                            .drop_duplicates(subset=["소분류_캐시"])
+                        )
+
+                        addr_map = dict(
+                            zip(
+                                valid_addr_df["소분류_캐시"],
+                                valid_addr_df["사업장주소"]
+                            )
+                        )
+
                         for so in raw_so:
-                            prio = 5
-                            addr = str(addr_map.get(so, "")).strip()
-                            if addr.startswith("서울"): prio = 1
-                            elif addr.startswith("인천"): prio = 2
-                            elif addr.startswith("경기"): prio = 3
-                            elif addr.startswith("강원"): prio = 4
-                            so_priority[so] = prio
+                            priority = 5
+                            address = str(addr_map.get(so, "")).strip()
+
+                            if address.startswith("서울"):
+                                priority = 1
+                            elif address.startswith("인천"):
+                                priority = 2
+                            elif address.startswith("경기"):
+                                priority = 3
+                            elif address.startswith("강원"):
+                                priority = 4
+
+                            so_priority[so] = priority
                     else:
                         for so in raw_so:
                             so_priority[so] = 5
-                            
-                    all_so = sorted(raw_so, key=lambda x: (so_priority[x], x))
-                    
-                    if "집단상가" not in all_so:
-                        all_so.insert(0, "집단상가")
-                        
-                    selected_so = st.multiselect("지역(소분류)", all_so, placeholder="미선택 시 전체 (대분류 선택 시 연동)")    
-                    
-                with c_owner:
-                    _key = (
-                        tuple(sorted(selected_models)),
-                        tuple(sorted(selected_colors if selected_colors else [])),
-                        tuple(sorted(selected_dae)),
-                        tuple(sorted(selected_so))
+
+                    so_options = sorted(
+                        raw_so,
+                        key=lambda x: (so_priority[x], str(x))
                     )
-                    if st.session_state.get('_owner_cache_key') != _key:
-                        _odf = df.copy()
-                        if selected_models:
-                            _odf = _odf[_odf[real_model].isin(selected_models)]
-                        if real_color and selected_colors:
-                            _odf = _odf[_odf[real_color].isin(selected_colors)]
-                        if selected_dae:
-                            _adae = [x for x in selected_dae if x != "사무실(반추정보통신)"]
-                            _mask = _odf['대분류_캐시'].isin(_adae)
-                            if "사무실(반추정보통신)" in selected_dae:
-                                _mask |= _odf[real_boyu].astype(str).str.contains("반추", na=False)
-                            _odf = _odf[_mask]
-                        if selected_so:
-                            _odf = _odf[_odf['소분류_캐시'].isin(selected_so) | _odf['소분류_유추불가']]
-                        st.session_state['_owner_cache_key'] = _key
-                        st.session_state['_owner_cache_list'] = sorted(
-                            [str(x) for x in _odf[real_boyu].unique() if pd.notna(x)]
+
+                    if "집단상가" not in so_options:
+                        so_options.insert(0, "집단상가")
+
+                    # 보유처 목록
+                    owner_options = sorted(
+                        [
+                            str(v)
+                            for v in df[real_boyu].dropna().unique().tolist()
+                            if str(v).strip()
+                        ]
+                    )
+
+                    # 파일별 고정 옵션 저장
+                    st.session_state["_filter_model_options"] = model_options
+                    st.session_state["_filter_color_options"] = color_options
+                    st.session_state["_filter_dae_options"] = dae_options
+                    st.session_state["_filter_so_options"] = so_options
+                    st.session_state["_filter_owner_options"] = owner_options
+                    st.session_state["_filter_option_file"] = current_filter_file
+
+                    # 새 파일이 업로드되면 이전 선택을 정리하고
+                    # URL에 있는 모델/대분류/색상 조건만 복원합니다.
+                    init_models = _qp_list("m")
+                    init_dae = _qp_list("d")
+                    init_colors = _qp_list("c")
+
+                    st.session_state["filter_selected_models"] = [
+                        x for x in init_models
+                        if x in model_options
+                    ]
+
+                    st.session_state["filter_selected_dae"] = [
+                        x for x in init_dae
+                        if x in dae_options
+                    ]
+
+                    st.session_state["filter_selected_colors"] = [
+                        x for x in color_options
+                        if str(x) in init_colors
+                    ]
+
+                    st.session_state["filter_selected_so"] = []
+                    st.session_state["filter_selected_owners"] = []
+
+                    # 선택용 selectbox도 초기화합니다.
+                    st.session_state["filter_picker_model"] = None
+                    st.session_state["filter_picker_dae"] = None
+                    st.session_state["filter_picker_color"] = None
+                    st.session_state["filter_picker_so"] = None
+                    st.session_state["filter_picker_owner"] = None
+
+                # --------------------------------------------------------------
+                # 3. 저장된 고정 옵션 불러오기
+                # --------------------------------------------------------------
+                model_options = st.session_state.get(
+                    "_filter_model_options", []
+                )
+                color_options = st.session_state.get(
+                    "_filter_color_options", []
+                )
+                dae_options = st.session_state.get(
+                    "_filter_dae_options", []
+                )
+                so_options = st.session_state.get(
+                    "_filter_so_options", []
+                )
+                owner_options = st.session_state.get(
+                    "_filter_owner_options", []
+                )
+
+                # 선택 목록이 없으면 초기화
+                selection_keys = [
+                    "filter_selected_models",
+                    "filter_selected_colors",
+                    "filter_selected_dae",
+                    "filter_selected_so",
+                    "filter_selected_owners",
+                ]
+
+                for selection_key in selection_keys:
+                    if selection_key not in st.session_state:
+                        st.session_state[selection_key] = []
+
+                # --------------------------------------------------------------
+                # 4. selectbox 선택값을 누적 목록에 추가
+                #
+                # callback에서 picker를 None으로 바꾸기 때문에
+                # 하나를 선택한 직후 드롭다운이 닫히고 검색바가 초기화됩니다.
+                # --------------------------------------------------------------
+                def _add_filter_value(picker_key, selected_key):
+                    value = st.session_state.get(picker_key)
+
+                    if value is None:
+                        return
+
+                    selected_values = list(
+                        st.session_state.get(selected_key, [])
+                    )
+
+                    # 같은 항목은 한 번만 저장
+                    if value not in selected_values:
+                        selected_values.append(value)
+
+                    st.session_state[selected_key] = selected_values
+                    st.session_state[picker_key] = None
+
+                # --------------------------------------------------------------
+                # 5. 선택된 항목 표시 및 개별 삭제
+                # --------------------------------------------------------------
+                def _show_selected_values(selected_key, widget_prefix):
+                    selected_values = list(
+                        st.session_state.get(selected_key, [])
+                    )
+
+                    if not selected_values:
+                        return
+
+                    # 한 줄에 최대 4개씩 표시
+                    for start_index in range(0, len(selected_values), 4):
+                        row_values = selected_values[start_index:start_index + 4]
+                        row_columns = st.columns(len(row_values))
+
+                        for column, value in zip(row_columns, row_values):
+                            value_text = str(value)
+                            value_id = hashlib.md5(
+                                value_text.encode("utf-8")
+                            ).hexdigest()
+
+                            with column:
+                                if st.button(
+                                    f"✕ {value_text}",
+                                    key=f"{widget_prefix}_{value_id}",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state[selected_key] = [
+                                        item
+                                        for item in selected_values
+                                        if item != value
+                                    ]
+                                    st.rerun(scope="fragment")
+
+                # --------------------------------------------------------------
+                # 6. 첫 번째 검색줄: 모델 / 대분류 / 색상
+                # --------------------------------------------------------------
+                c_model, c_dae, c_color = st.columns(3)
+
+                with c_model:
+                    st.selectbox(
+                        "모델",
+                        options=model_options,
+                        index=None,
+                        placeholder="모델을 검색하거나 선택하세요",
+                        key="filter_picker_model",
+                        on_change=_add_filter_value,
+                        args=(
+                            "filter_picker_model",
+                            "filter_selected_models",
+                        ),
+                    )
+
+                    _show_selected_values(
+                        "filter_selected_models",
+                        "remove_model",
+                    )
+
+                with c_dae:
+                    st.selectbox(
+                        "지역(대분류)",
+                        options=dae_options,
+                        index=None,
+                        placeholder="대분류를 검색하거나 선택하세요",
+                        key="filter_picker_dae",
+                        on_change=_add_filter_value,
+                        args=(
+                            "filter_picker_dae",
+                            "filter_selected_dae",
+                        ),
+                    )
+
+                    _show_selected_values(
+                        "filter_selected_dae",
+                        "remove_dae",
+                    )
+
+                with c_color:
+                    if real_color:
+                        st.selectbox(
+                            "색상",
+                            options=color_options,
+                            index=None,
+                            placeholder="색상을 검색하거나 선택하세요",
+                            key="filter_picker_color",
+                            on_change=_add_filter_value,
+                            args=(
+                                "filter_picker_color",
+                                "filter_selected_colors",
+                            ),
                         )
-                    all_owners = st.session_state.get('_owner_cache_list', [])
-                    selected_owners = st.multiselect("보유처", all_owners, placeholder="미선택 시 전체")
 
-                # 🚀 [핵심 추가] Fragment 밖의 버튼이 쓸 수 있도록 세션에 최신 상태 저장
-                st.session_state['tmp_selected_models'] = selected_models
-                st.session_state['tmp_selected_colors'] = selected_colors
-                st.session_state['tmp_selected_dae'] = selected_dae
-                st.session_state['tmp_selected_so'] = selected_so
-                st.session_state['tmp_selected_owners'] = selected_owners
+                        _show_selected_values(
+                            "filter_selected_colors",
+                            "remove_color",
+                        )
+                    else:
+                        st.write("-")
 
-            # 🚀 검색창(드롭다운) 영역만 독립 실행
-            search_filter_section()            
+                # --------------------------------------------------------------
+                # 7. 두 번째 검색줄: 소분류 / 보유처
+                # --------------------------------------------------------------
+                c_region_so, c_owner = st.columns(2)
+
+                with c_region_so:
+                    st.selectbox(
+                        "지역(소분류)",
+                        options=so_options,
+                        index=None,
+                        placeholder="소분류를 검색하거나 선택하세요",
+                        key="filter_picker_so",
+                        on_change=_add_filter_value,
+                        args=(
+                            "filter_picker_so",
+                            "filter_selected_so",
+                        ),
+                    )
+
+                    _show_selected_values(
+                        "filter_selected_so",
+                        "remove_so",
+                    )
+
+                with c_owner:
+                    st.selectbox(
+                        "보유처",
+                        options=owner_options,
+                        index=None,
+                        placeholder="보유처를 검색하거나 선택하세요",
+                        key="filter_picker_owner",
+                        on_change=_add_filter_value,
+                        args=(
+                            "filter_picker_owner",
+                            "filter_selected_owners",
+                        ),
+                    )
+
+                    _show_selected_values(
+                        "filter_selected_owners",
+                        "remove_owner",
+                    )
+
+                # --------------------------------------------------------------
+                # 8. 기존 조회 버튼이 사용하도록 선택 결과 전달
+                # --------------------------------------------------------------
+                st.session_state["tmp_selected_models"] = list(
+                    st.session_state["filter_selected_models"]
+                )
+                st.session_state["tmp_selected_colors"] = list(
+                    st.session_state["filter_selected_colors"]
+                )
+                st.session_state["tmp_selected_dae"] = list(
+                    st.session_state["filter_selected_dae"]
+                )
+                st.session_state["tmp_selected_so"] = list(
+                    st.session_state["filter_selected_so"]
+                )
+                st.session_state["tmp_selected_owners"] = list(
+                    st.session_state["filter_selected_owners"]
+                )
+
+            # 검색창 영역만 독립 실행
+            search_filter_section()        
 
             # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
             #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
