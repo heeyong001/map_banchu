@@ -2335,10 +2335,6 @@ with main_container.container():
                     message = st.session_state.pop("filter_owner_keyword_message", None)
                     if message:
                         st.caption(message)
-                    st.caption(
-                        f"현재 조건의 보유처 {len(linked_owner_options)}곳 · "
-                        f"선택 {len(selected_owners)}곳. 결과는 조회하기를 누르면 반영됩니다."
-                    )
                     if removed_count:
                         st.caption(f"조건에 맞지 않는 기존 선택 {removed_count}곳을 해제했습니다.")
 
@@ -2459,7 +2455,16 @@ with main_container.container():
                 """, unsafe_allow_html=True)
 
                 # [수정] 엑셀 다운로드 버튼을 삭제하고 제목만 깔끔하게 출력
-                st.markdown(f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px; color: #E8D5A5;'>검색 총수량 ({len(list_df)}건)</h3>", unsafe_allow_html=True)
+                owner_count = len(st.session_state.get("filter_owner_option_signature", ()))
+                selected_owner_count = len(st.session_state.get("filter_selected_owners", []))
+                st.markdown(
+                    f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px; color: #E8D5A5;'>"
+                    f"검색 총수량 ({len(list_df)}건) "
+                    f"<span style='font-size: 14px; font-weight: normal;'>"
+                    f"현재 조건의 보유처 {owner_count}곳 · 선택 {selected_owner_count}곳. "
+                    "결과는 조회하기를 누르면 반영됩니다.</span></h3>",
+                    unsafe_allow_html=True,
+                )
                 st.markdown("---")
 
                 if not list_df.empty:
