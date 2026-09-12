@@ -2301,10 +2301,7 @@ with main_container.container():
                         additions = [value for value in matches if value not in current]
                         st.session_state["filter_selected_owners"] = current + additions
                         st.session_state["tmp_selected_owners"] = current + additions
-                        st.session_state["filter_owner_keyword_message"] = (
-                            f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
-                            if matches else "현재 조건에서 일치하는 보유처가 없습니다."
-                        )
+
                         # 일반 항목 선택과 동일하게 세대를 교체하여 검색어/팝업 정리.
                         generation = st.session_state["filter_generation_owner"]
                         st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
