@@ -23,6 +23,7 @@ def _owner_enter_component():
                 event.stopPropagation();
                 event.stopImmediatePropagation();
                 if (event.repeat) return;
+                document.dispatchEvent(new CustomEvent('inventory-owner-intent', {detail: (data.options || []).filter(x => x.toLowerCase().includes(keyword.toLowerCase()))}));
                 input.blur();
                 setTriggerValue('keyword', keyword);
             };
@@ -31,6 +32,138 @@ def _owner_enter_component():
         }
         """,
     )
+
+
+# Browser-owned recovery: it remains able to detect a lost Python connection.
+@st.cache_resource
+def _recovery_component():
+    import streamlit.components.v2 as components_v2
+    return components_v2.component("inventory_recovery", js=r"""
+    export default function({data, setTriggerValue}) {
+        const root = window;
+        const key = 'inventory-recovery-v1:' + location.pathname + ':' + data.user;
+        let r = root.__inventoryRecovery;
+        if (!r || r.key !== key) {
+            if (r?.dispose) r.dispose();
+            let saved = null;
+            try { saved = JSON.parse(sessionStorage.getItem(key)); } catch (_) {}
+            r = root.__inventoryRecovery = {key, draft:data.draft, last:data.last,
+                pending:null, saved, loaded:false, timer:null, changedAt:0};
+        }
+        r.send = setTriggerValue;
+        r.data = data;
+        const persist = () => {
+            try { sessionStorage.setItem(key, JSON.stringify({draft:r.draft,last:r.last,time:Date.now()})); } catch (_) {}
+        };
+        const status = (text) => {
+            let el = document.getElementById('inventory-connection-status');
+            if (!el) {
+                el = document.createElement('div'); el.id='inventory-connection-status';
+                el.setAttribute('role','status');
+                el.style.cssText='position:fixed;bottom:16px;left:16px;right:16px;z-index:99999;background:#182c24;color:white;padding:12px;border-radius:8px;pointer-events:none';
+                document.body.appendChild(el);
+            }
+            el.textContent=text; el.hidden=!text;
+        };
+        const ping = (restore=false) => {
+            if (document.hidden || r.pending || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
+            const nonce = String(Date.now()) + Math.random();
+            r.pending={nonce,time:Date.now()};
+            r.send('request',{nonce,restore,draft:r.draft,last:r.last});
+        };
+        if (r.ownerIntent && r.ownerIntent.every(x => data.draft.owners.includes(x))) r.ownerIntent=null;
+        if (r.pending && data.ack === r.pending.nonce) {
+            r.pending=null; status('');
+            try { sessionStorage.removeItem(key+':attempts'); } catch(_) {}
+            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; if(data.last) r.last=data.last; persist();
+        } else if (!r.pending && r.loaded) {
+            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; if(data.last) r.last=data.last; persist();
+        }
+        if (!r.loaded) {
+            r.loaded=true;
+            if (data.fresh && r.saved && Date.now()-r.saved.time < 86400000) {
+                r.draft=r.saved.draft; r.last=r.saved.last; ping(true);
+            } else { persist(); ping(); }
+        }
+        if (!r.timer) {
+            const readDraft = () => {
+                const next = {...r.draft};
+                for (const [name,prefix] of Object.entries(r.data.prefixes)) {
+                    const box = document.querySelector('[class*="st-key-'+prefix+'_"]');
+                    if (!box) continue;
+                    next[name]=Array.from(box.querySelectorAll('[data-baseweb="tag"]')).map(x=>x.querySelector('span[title]')?.getAttribute('title') || x.textContent.trim());
+                }
+                if (r.ownerIntent) next.owners=r.ownerIntent;
+                return next;
+            };
+            const changed = () => {
+                const next=readDraft();
+                if (JSON.stringify(next)!==JSON.stringify(r.draft)) {
+                    r.draft=next; persist(); r.changedAt=Date.now();
+                }
+            };
+            const resume = () => { if (!document.hidden) ping(); };
+            const click = (event) => {
+                if (event.target.closest('button')?.textContent.includes('로그아웃')) {
+                    try { sessionStorage.removeItem(key); } catch(_) {}
+                    r.dispose(); root.__inventoryRecovery=null; status(''); return;
+                }
+                if (event.target.closest('.st-key-inventory_search_button')) { changed(); r.last={...r.draft}; persist(); setTimeout(()=>ping(),250); }
+            };
+            const owner = (event) => {
+                r.draft.owners=[...new Set([...r.draft.owners,...event.detail])];
+                r.ownerIntent=r.draft.owners;
+                persist(); r.changedAt=Date.now();
+            };
+            document.addEventListener('click',click,true);
+            document.addEventListener('visibilitychange',resume);
+            document.addEventListener('inventory-owner-intent',owner);
+            window.addEventListener('online',resume);
+            window.addEventListener('pageshow',resume);
+            r.timer=setInterval(()=>{
+                if(document.hidden || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
+                if (!r.pending) changed();
+                if(r.changedAt && Date.now()-r.changedAt>600 && !r.pending) {
+                    r.changedAt=0; ping(true);
+                }
+                if(r.pending && Date.now()-r.pending.time>8000) {
+                    status(navigator.onLine ? '연결을 복구하고 있습니다. 검색조건은 보관됩니다.' : '인터넷 연결을 기다리고 있습니다.');
+                    if(!navigator.onLine) return;
+                    let lastReload=0;
+                    try { lastReload=Number(sessionStorage.getItem(key+':reload')||0); } catch(_) {}
+                    let attempts=0;
+                    try { attempts=Number(sessionStorage.getItem(key+':attempts')||0); } catch(_) {}
+                    if(attempts>=2) { status('연결을 복구하지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.'); return; }
+                    if(Date.now()-lastReload>60000 && !r.probing && Date.now()-(r.lastProbe||0)>5000) {
+                        r.probing=true; r.lastProbe=Date.now();
+                        const controller=new AbortController();
+                        const deadline=setTimeout(()=>controller.abort(),4000);
+                        // Reachability is only a reload guard; the component ACK proves app connectivity.
+                        const health=new URL('_stcore/health', location.origin + location.pathname.replace(/\/?$/, '/'));
+                        fetch(health,{cache:'no-store',signal:controller.signal}).then(response=>{
+                            if(!response.ok || !r.pending || document.hidden) return;
+                            try {
+                                sessionStorage.setItem(key+':reload',String(Date.now()));
+                                sessionStorage.setItem(key+':attempts',String(attempts+1)); persist();
+                            } catch(_) { status('자동 복구를 위해 새로고침해 주세요.'); return; }
+                            location.reload();
+                        }).catch(()=>status('서버 연결을 기다리고 있습니다. 검색조건은 보관됩니다.'))
+                        .finally(()=>{clearTimeout(deadline);r.probing=false;});
+                    }
+                }
+            },300);
+            r.dispose=()=>{
+                clearInterval(r.timer);
+                document.removeEventListener('click',click,true);
+                document.removeEventListener('visibilitychange',resume);
+                document.removeEventListener('inventory-owner-intent',owner);
+                window.removeEventListener('online',resume);
+                window.removeEventListener('pageshow',resume);
+            };
+        }
+        // Do not remove the watchdog during a Streamlit component remount.
+    }
+    """)
 
 import random
 import os
@@ -584,8 +717,8 @@ if 'search_clicked' not in st.session_state: st.session_state['search_clicked'] 
 
 # 🚀 [추가] 100배 빠른 조회를 위한 검색 결과 캐싱 함수 (중복 계산 방지)
 @st.cache_data(ttl="1h", show_spinner=False)
-def get_cached_search_results(_df, models, colors, owners, daes, sos, real_model, real_color, real_boyu):
-    temp_df = _df.copy()
+def get_cached_search_results(df, models, colors, owners, daes, sos, real_model, real_color, real_boyu):
+    temp_df = df.copy()
     if models: temp_df = temp_df[temp_df[real_model].isin(models)]
     if colors and real_color: temp_df = temp_df[temp_df[real_color].isin(colors)]
     if owners: temp_df = temp_df[temp_df[real_boyu].isin(owners)]
@@ -1361,7 +1494,7 @@ with main_container.container():
             return hex_c, text_c
 
         @st.cache_data(ttl="12h", show_spinner=False)
-        def load_data_optimized(file):
+        def load_data_optimized(file, file_version=None):
             # 1. 데이터 로드 (parquet 캐시 우선, 없거나 실패하면 엑셀)
             df = None
             if isinstance(file, str):
@@ -1661,7 +1794,7 @@ with main_container.container():
             try: 
                 # 🚀 [수정] 요청하신 깔끔한 멘트로 변경 완료
                 with st.spinner("🔄 자료를 갱신중입니다."):
-                    df = load_data_optimized(DATA_FILE)
+                    df = load_data_optimized(DATA_FILE, (os.stat(DATA_FILE).st_mtime_ns, os.stat(DATA_FILE).st_size))
             except Exception as e:
                 st.error(f"데이터 로드 오류: {e}")
 
@@ -1848,7 +1981,7 @@ with main_container.container():
                 # last_uploaded가 None이 됩니다.
                 # 이 경우 서버에 저장된 재고 파일의 크기와 수정시간으로
                 # 고유한 파일 ID를 다시 생성합니다.
-                if not current_filter_file and os.path.exists(DATA_FILE):
+                if os.path.exists(DATA_FILE):
                     saved_file_stat = os.stat(DATA_FILE)
 
                     current_filter_file = (
@@ -1857,7 +1990,7 @@ with main_container.container():
                         f"{saved_file_stat.st_mtime_ns}"
                     )
 
-                    st.session_state["last_uploaded"] = current_filter_file
+                    # 파일 버전은 옵션 캐시에만 사용합니다.
 
                 # 저장 파일도 없는 경우
                 if not current_filter_file:
@@ -2003,9 +2136,9 @@ with main_container.container():
 
                     # 새 파일이 업로드되면 이전 선택을 정리하고
                     # URL에 있는 모델/대분류/색상 조건만 복원합니다.
-                    init_models = _qp_list("m")
-                    init_dae = _qp_list("d")
-                    init_colors = _qp_list("c")
+                    init_models = st.session_state.get("filter_selected_models", _qp_list("m"))
+                    init_dae = st.session_state.get("filter_selected_dae", _qp_list("d"))
+                    init_colors = [str(x) for x in st.session_state.get("filter_selected_colors", _qp_list("c"))]
 
                     st.session_state["filter_selected_models"] = [
                         x for x in init_models
@@ -2022,8 +2155,8 @@ with main_container.container():
                         if str(x) in init_colors
                     ]
 
-                    st.session_state["filter_selected_so"] = []
-                    st.session_state["filter_selected_owners"] = []
+                    st.session_state["filter_selected_so"] = [x for x in st.session_state.get("filter_selected_so", []) if x in so_options]
+                    st.session_state["filter_selected_owners"] = [x for x in st.session_state.get("filter_selected_owners", []) if x in owner_options]
                     st.session_state.pop("filter_owner_option_signature", None)
                     st.session_state.pop("filter_owner_keyword_message", None)
 
@@ -2301,7 +2434,10 @@ with main_container.container():
                         additions = [value for value in matches if value not in current]
                         st.session_state["filter_selected_owners"] = current + additions
                         st.session_state["tmp_selected_owners"] = current + additions
-
+                        st.session_state["filter_owner_keyword_message"] = (
+                            f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
+                            if matches else "현재 조건에서 일치하는 보유처가 없습니다."
+                        )
                         # 일반 항목 선택과 동일하게 세대를 교체하여 검색어/팝업 정리.
                         generation = st.session_state["filter_generation_owner"]
                         st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
@@ -2322,7 +2458,7 @@ with main_container.container():
                     )
                     _owner_enter_component()(
                         key="filter_owner_enter",
-                        data={"widget_key": (
+                        data={"options": linked_owner_options, "widget_key": (
                             "filter_multiselect_owner_"
                             + str(st.session_state["filter_generation_owner"])
                         )},
@@ -2344,8 +2480,47 @@ with main_container.container():
                 st.session_state["tmp_selected_so"] = selected_so
                 st.session_state["tmp_selected_owners"] = selected_owners
 
+                def _receive_recovery():
+                    request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
+                    st.session_state["_recovery_ack"] = request.get("nonce")
+                    if request.get("restore"):
+                        draft = request.get("draft") or {}
+                        for name, suffix in recovery_prefixes.items():
+                            values = draft.get(name)
+                            if isinstance(values, list) and all(isinstance(v, str) for v in values):
+                                st.session_state["filter_selected_" + name] = list(dict.fromkeys(values))[:5000]
+                                generation_key = "filter_generation_" + suffix
+                                st.session_state[generation_key] += 1
+                        if st.session_state.get("_recovery_fresh", True):
+                            last = request.get("last")
+                            if isinstance(last, dict):
+                                st.session_state["_last_search_conditions"] = last
+                                st.session_state["_restore_last_result"] = True
+                        st.session_state["_recovery_fresh"] = False
+                        st.session_state["_recovery_full_rerun"] = True
+                    st.session_state["_recovery_fresh"] = False
+
+                recovery_prefixes = {"models":"model", "colors":"color", "dae":"dae", "so":"so", "owners":"owner"}
+                _recovery_component()(
+                    key="inventory_recovery_bridge",
+                    data={
+                        "user": st.session_state.get("username", ""),
+                        "draft": {name: st.session_state.get("filter_selected_" + name, []) for name in recovery_prefixes},
+                        "last": st.session_state.get("_last_search_conditions"),
+                        "fresh": st.session_state.get("_recovery_fresh", True),
+                        "ack": st.session_state.get("_recovery_ack"),
+                        "prefixes": {name: "filter_multiselect_" + suffix for name, suffix in recovery_prefixes.items()},
+                    },
+                    on_request_change=_receive_recovery,
+                    height=0,
+                )
+                if st.session_state.pop("_recovery_full_rerun", False):
+                    st.rerun(scope="app")
+
             # 검색창 영역만 독립 실행
-            search_filter_section()        
+            search_filter_section()
+            if st.session_state.pop("_recovery_full_rerun", False):
+                st.rerun()
 
             # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
             #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
@@ -2354,7 +2529,7 @@ with main_container.container():
             # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
             
-            if st.button("🚀 조회하기", use_container_width=True):
+            if st.button("🚀 조회하기", key="inventory_search_button", use_container_width=True):
                 # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
                 s_models = st.session_state.get('tmp_selected_models', [])
                 s_colors = st.session_state.get('tmp_selected_colors', [])
@@ -2420,6 +2595,7 @@ with main_container.container():
                         real_model, real_color, real_boyu
                     )
                     
+                    st.session_state['_last_search_conditions'] = dict(models=s_models, colors=s_colors, owners=s_owners, dae=s_dae, so=s_so)
                     st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
                     st.session_state['selected_idx'] = None
                     st.session_state['clicked_store_name'] = None
@@ -2435,6 +2611,16 @@ with main_container.container():
                             st.query_params.update(_qp_new)
                     except Exception as _qe:
                         print(f"[URL 저장 실패] {_qe}")
+
+        if st.session_state.pop("_restore_last_result", False):
+            last = st.session_state.get("_last_search_conditions") or {}
+            if all(isinstance(last.get(k, []), list) and all(isinstance(v, str) for v in last.get(k, [])) for k in ("models", "colors", "owners", "dae", "so")) and df is not None:
+                list_res, map_res = get_cached_search_results(
+                    df, tuple(last.get("models", [])), tuple(last.get("colors", [])),
+                    tuple(last.get("owners", [])), tuple(last.get("dae", [])),
+                    tuple(last.get("so", [])), real_model, real_color, real_boyu,
+                )
+                st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
 
         # 4. 결과 출력
         # 🚀 [최적화 2] 결과 화면(지도+리스트)을 독립된 구역(Fragment)으로 분리
@@ -2458,7 +2644,8 @@ with main_container.container():
                     f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px; color: #E8D5A5;'>"
                     f"검색 총수량 ({len(list_df)}건) "
                     f"<span style='font-size: 14px; font-weight: normal;'>"
-                    f"현재 조건의 보유처 {owner_count}개 · 선택 {selected_owner_count}개. ",
+                    f"현재 조건의 보유처 {owner_count}곳 · 선택 {selected_owner_count}곳. "
+                    "결과는 조회하기를 누르면 반영됩니다.</span></h3>",
                     unsafe_allow_html=True,
                 )
                 st.markdown("---")
