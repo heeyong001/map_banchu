@@ -90,7 +90,8 @@ def _recovery_component():
                 const next = {...r.draft};
                 for (const [name,prefix] of Object.entries(r.data.prefixes)) {
                     const box = document.querySelector('[class*="st-key-'+prefix+'_"]');
-                    if (!box) continue;
+                    // A missing/stale widget during rerender is not a user deletion.
+                    if (!box || box.closest('[data-stale="true"]')) return null;
                     next[name]=Array.from(box.querySelectorAll('[data-baseweb="tag"]')).map(x=>x.querySelector('span[title]')?.getAttribute('title') || x.textContent.trim());
                 }
                 if (r.ownerIntent) next.owners=r.ownerIntent;
@@ -98,8 +99,20 @@ def _recovery_component():
             };
             const changed = () => {
                 const next=readDraft();
+                if (!next) return;
                 if (JSON.stringify(next)!==JSON.stringify(r.draft)) {
                     r.draft=next; persist(); r.changedAt=Date.now();
+                }
+            };
+            const interaction = (event) => {
+                const target=event.target;
+                if (!(target instanceof Element)) return;
+                if (target.closest('[class*="st-key-filter_multiselect_"]') ||
+                    target.closest('[role="option"]')) {
+                    r.captureUntil=Date.now()+1500;
+                    // Probe connectivity without restoring/rewriting widget values.
+                    clearTimeout(r.interactionTimer);
+                    r.interactionTimer=setTimeout(()=>ping(),700);
                 }
             };
             const resume = () => { if (!document.hidden) ping(); };
@@ -116,15 +129,17 @@ def _recovery_component():
                 persist(); r.changedAt=Date.now();
             };
             document.addEventListener('click',click,true);
+            document.addEventListener('click',interaction,true);
+            document.addEventListener('keydown',interaction,true);
             document.addEventListener('visibilitychange',resume);
             document.addEventListener('inventory-owner-intent',owner);
             window.addEventListener('online',resume);
             window.addEventListener('pageshow',resume);
             r.timer=setInterval(()=>{
                 if(document.hidden || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
-                if (!r.pending) changed();
+                if (!r.pending && Date.now() < (r.captureUntil || 0)) changed();
                 if(r.changedAt && Date.now()-r.changedAt>600 && !r.pending) {
-                    r.changedAt=0; ping(true);
+                    r.changedAt=0; ping();
                 }
                 if(r.pending && Date.now()-r.pending.time>8000) {
                     status(navigator.onLine ? '연결을 복구하고 있습니다. 검색조건은 보관됩니다.' : '인터넷 연결을 기다리고 있습니다.');
@@ -154,7 +169,10 @@ def _recovery_component():
             },300);
             r.dispose=()=>{
                 clearInterval(r.timer);
+                clearTimeout(r.interactionTimer);
                 document.removeEventListener('click',click,true);
+                document.removeEventListener('click',interaction,true);
+                document.removeEventListener('keydown',interaction,true);
                 document.removeEventListener('visibilitychange',resume);
                 document.removeEventListener('inventory-owner-intent',owner);
                 window.removeEventListener('online',resume);
@@ -2483,7 +2501,7 @@ with main_container.container():
                 def _receive_recovery():
                     request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
                     st.session_state["_recovery_ack"] = request.get("nonce")
-                    if request.get("restore"):
+                    if request.get("restore") and st.session_state.get("_recovery_fresh", True):
                         draft = request.get("draft") or {}
                         for name, suffix in recovery_prefixes.items():
                             values = draft.get(name)
