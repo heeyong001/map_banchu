@@ -1,5 +1,37 @@
 import streamlit as st
 import pandas as pd
+
+# 기존 보유처 멀티셀렉트의 입력창에서 Enter를 감지합니다.
+# Streamlit components v2 사용 (1.54.0에서 브라우저 검증).
+@st.cache_resource
+def _owner_enter_component():
+    import streamlit.components.v2 as components_v2
+    return components_v2.component(
+        "owner_keyword_enter",
+        js="""
+        export default function({data, setTriggerValue}) {
+            const selector = '.st-key-' + CSS.escape(data.widget_key);
+            const onKeyDown = (event) => {
+                const input = event.target;
+                if (!(input instanceof HTMLInputElement) ||
+                    !input.closest(selector) || event.key !== 'Enter') return;
+                // 한글 조합 확정 Enter는 선택 동작으로 처리하지 않습니다.
+                if (event.isComposing || event.keyCode === 229) return;
+                const keyword = input.value.trim();
+                if (!keyword) return; // 빈 입력은 원래 키보드 선택 동작 유지
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                if (event.repeat) return;
+                input.blur();
+                setTriggerValue('keyword', keyword);
+            };
+            document.addEventListener('keydown', onKeyDown, true);
+            return () => document.removeEventListener('keydown', onKeyDown, true);
+        }
+        """,
+    )
+
 import random
 import os
 import hashlib
@@ -1993,7 +2025,7 @@ with main_container.container():
                     st.session_state["filter_selected_so"] = []
                     st.session_state["filter_selected_owners"] = []
                     st.session_state.pop("filter_owner_option_signature", None)
-                    st.session_state["filter_owner_keyword"] = ""
+                    st.session_state.pop("filter_owner_keyword_message", None)
 
                     # 새 파일 업로드 시 멀티셀렉트 위젯 세대 초기화
                     st.session_state["filter_generation_model"] = 0
@@ -2254,55 +2286,55 @@ with main_container.container():
                     )
                     st.session_state["filter_owner_option_signature"] = owner_signature
 
-                    # 화면에는 선택창을 먼저 표시하되, 일괄 선택을 처리한 뒤
-                    # 위젯을 생성하여 화면 태그와 Session State를 동기화합니다.
-                    owner_select_slot = st.container()
-                    with st.form("filter_owner_keyword_form", clear_on_submit=True):
-                        owner_keyword = st.text_input(
-                            "보유처 키워드 일괄 선택",
-                            key="filter_owner_keyword",
-                            placeholder="예: 파주 → Enter로 일치 보유처 모두 추가",
-                        )
-                        add_matching_owners = st.form_submit_button(
-                            "일치 보유처 추가", use_container_width=True,
-                        )
-
-                    if add_matching_owners:
-                        keyword = owner_keyword.strip().casefold()
+                    def _select_owners_by_keyword():
+                        event = st.session_state.get("filter_owner_enter", {})
+                        keyword = str(event.get("keyword") or "").strip().casefold()
                         if not keyword:
-                            st.info("추가할 보유처 키워드를 입력하세요.")
-                        else:
-                            matches = [
-                                value for value in linked_owner_options
-                                if keyword in value.casefold()
-                            ]
-                            additions = [
-                                value for value in matches if value not in current_owners
-                            ]
-                            if matches:
-                                current_owners = current_owners + additions
-                                st.session_state["filter_selected_owners"] = current_owners
-                                st.success(
-                                    f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
-                                )
-                                owner_options_changed = True
-                            else:
-                                st.info("현재 조건에서 해당 키워드와 일치하는 보유처가 없습니다.")
+                            return
+                        # 이벤트 발생 시점의 최신 옵션/선택을 사용합니다.
+                        options = st.session_state.get("filter_owner_option_signature", ())
+                        current = [
+                            value for value in st.session_state.get("filter_selected_owners", [])
+                            if value in options
+                        ]
+                        matches = [value for value in options if keyword in value.casefold()]
+                        additions = [value for value in matches if value not in current]
+                        st.session_state["filter_selected_owners"] = current + additions
+                        st.session_state["tmp_selected_owners"] = current + additions
+                        st.session_state["filter_owner_keyword_message"] = (
+                            f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
+                            if matches else "현재 조건에서 일치하는 보유처가 없습니다."
+                        )
+                        # 일반 항목 선택과 동일하게 세대를 교체하여 검색어/팝업 정리.
+                        generation = st.session_state["filter_generation_owner"]
+                        st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
+                        st.session_state["filter_generation_owner"] = generation + 1
 
                     if owner_options_changed or removed_count:
                         generation = st.session_state["filter_generation_owner"]
                         st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
                         st.session_state["filter_generation_owner"] = generation + 1
 
-                    with owner_select_slot:
-                        selected_owners = _closed_multiselect(
-                            label="보유처",
-                            options=linked_owner_options,
-                            selected_key="filter_selected_owners",
-                            generation_key="filter_generation_owner",
-                            widget_prefix="filter_multiselect_owner",
-                            placeholder="현재 조건의 보유처 선택 · 미선택 시 전체",
-                        )
+                    selected_owners = _closed_multiselect(
+                        label="보유처",
+                        options=linked_owner_options,
+                        selected_key="filter_selected_owners",
+                        generation_key="filter_generation_owner",
+                        widget_prefix="filter_multiselect_owner",
+                        placeholder="보유처 검색 · Enter로 일치 항목 모두 선택",
+                    )
+                    _owner_enter_component()(
+                        key="filter_owner_enter",
+                        data={"widget_key": (
+                            "filter_multiselect_owner_"
+                            + str(st.session_state["filter_generation_owner"])
+                        )},
+                        on_keyword_change=_select_owners_by_keyword,
+                        height=0,
+                    )
+                    message = st.session_state.pop("filter_owner_keyword_message", None)
+                    if message:
+                        st.caption(message)
                     st.caption(
                         f"현재 조건의 보유처 {len(linked_owner_options)}곳 · "
                         f"선택 {len(selected_owners)}곳. 결과는 조회하기를 누르면 반영됩니다."
