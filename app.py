@@ -2461,7 +2461,7 @@ with main_container.container():
                     f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px; color: #E8D5A5;'>"
                     f"검색 총수량 ({len(list_df)}건) "
                     f"<span style='font-size: 14px; font-weight: normal;'>"
-                    f"현재 조건의 보유처 {owner_count}개 · 선택 {selected_owner_count}개. "
+                    f"현재 조건의 보유처 {owner_count}개 · 선택 {selected_owner_count}개. ",
                     unsafe_allow_html=True,
                 )
                 st.markdown("---")
