@@ -204,7 +204,11 @@ def _recovery_component():
 
 @st.fragment
 def render_recovery_bridge():
+    if st.session_state.get("_logout_pending") or st.session_state.get("_explicit_logged_out"):
+        return
     def _receive_recovery():
+        if st.session_state.get("_logout_pending") or st.session_state.get("_explicit_logged_out"):
+            return
         request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
         st.session_state["_recovery_ack"] = request.get("nonce")
         if request.get("restore") and st.session_state.get("_recovery_fresh", True):
@@ -250,10 +254,14 @@ def _begin_logout():
     st.session_state["logged_in"] = False
     st.session_state["_explicit_logged_out"] = True
     st.session_state["needs_cookie_bake"] = False
+    st.session_state["cookie_wait_count"] = 99
+    st.session_state["username"] = ""
+    st.session_state["role"] = ""
+    st.session_state["_logout_attempt"] = st.session_state.get("_logout_attempt", 0) + 1
 
 
 def _finish_logout():
-    result = st.session_state.get("logout_cookie_cleanup", {})
+    result = st.session_state.get("logout_cookie_cleanup", {}) or {}
     if result.get("done") is True:
         st.session_state.clear()
         st.session_state.update(logged_in=False, username="", role="",
@@ -264,7 +272,7 @@ def _finish_logout():
 def _logout_component():
     import streamlit.components.v2 as components_v2
     return components_v2.component("logout_cleanup", js=r"""
-    export default function({setStateValue}) {
+    export default function({setStateValue, data}) {
         window.__inventoryLoggingOut=true;
         const recovery=window.__inventoryRecovery;
         if(recovery?.dispose) recovery.dispose();
@@ -279,11 +287,13 @@ def _logout_component():
         const names=['auth_token','auth_user','auth_role'];
         let attempts=0;
         const clear=()=>{
+            try {
             for(const name of names) document.cookie=name+'=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict';
             const remaining=document.cookie.split(';').some(part=>names.includes(part.trim().split('=')[0]));
             if(!remaining) {setStateValue('done',true);return;}
             if(++attempts<5) timer=setTimeout(clear,200);
             else setStateValue('failed',true);
+            } catch (_) {setStateValue('failed',true);}
         };
         let timer;
         clear();
@@ -776,6 +786,8 @@ if st.session_state.get("_logout_pending", False):
     st.info("로그아웃 중입니다…")
     cleanup = _logout_component()(
         key="logout_cookie_cleanup",
+        data={"attempt": st.session_state.get("_logout_attempt", 0)},
+        default={"done": False, "failed": False},
         on_done_change=_finish_logout,
         on_failed_change=lambda: None,
         height=0,
@@ -784,6 +796,7 @@ if st.session_state.get("_logout_pending", False):
         st.error("로그인 쿠키를 삭제하지 못했습니다. 다시 시도해 주세요.")
         if st.button("로그아웃 다시 시도"):
             st.session_state.pop("logout_cookie_cleanup", None)
+            st.session_state["_logout_attempt"] = st.session_state.get("_logout_attempt", 0) + 1
             st.rerun()
     st.stop()
 
