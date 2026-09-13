@@ -56,16 +56,17 @@ def _recovery_component():
             try { sessionStorage.setItem(key, JSON.stringify({draft:r.draft,last:r.last,time:Date.now()})); } catch (_) {}
         };
         const status = (text) => {
-            let el = document.getElementById('inventory-connection-status');
-            if (!el) {
-                el = document.createElement('div'); el.id='inventory-connection-status';
-                el.setAttribute('role','status');
-                el.style.cssText='position:fixed;bottom:16px;left:16px;right:16px;z-index:99999;background:#182c24;color:white;padding:12px;border-radius:8px;pointer-events:none';
-                document.body.appendChild(el);
-            }
-            el.textContent=text; el.hidden=!text;
+            r.statusText=text;
+            const el=document.getElementById('inventory-connection-status');
+            if (el) { el.textContent=text; el.hidden=!text; }
         };
+        // Native reruns also prove connectivity, without interrupting an active query.
+        if (r.renderToken !== data.render_token) {
+            r.renderToken=data.render_token;
+            r.nativeDeadline=0;
+        }
         const ping = (restore=false) => {
+            if (Date.now() < (r.queryQuietUntil || 0)) return;
             if (document.hidden || r.pending || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
             const nonce = String(Date.now()) + Math.random();
             r.pending={nonce,time:Date.now()};
@@ -121,7 +122,12 @@ def _recovery_component():
                     try { sessionStorage.removeItem(key); } catch(_) {}
                     r.dispose(); root.__inventoryRecovery=null; status(''); return;
                 }
-                if (event.target.closest('.st-key-inventory_search_button')) { changed(); r.last={...r.draft}; persist(); setTimeout(()=>ping(),250); }
+                if (event.target.closest('.st-key-inventory_search_button')) { changed(); r.last={...r.draft}; persist();
+                    // Let the native search finish. A delayed health check must not
+                    // interrupt the first map render with a second fragment run.
+                    r.queryQuietUntil=Date.now()+30000;
+                    r.nativeDeadline=Date.now()+30000;
+                    clearTimeout(r.interactionTimer); }
             };
             const owner = (event) => {
                 r.draft.owners=[...new Set([...r.draft.owners,...event.detail])];
@@ -138,10 +144,14 @@ def _recovery_component():
             r.timer=setInterval(()=>{
                 if(document.hidden || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
                 if (!r.pending && Date.now() < (r.captureUntil || 0)) changed();
+                if (r.statusText) status(r.statusText);
+                if (r.nativeDeadline && Date.now()>r.nativeDeadline) {
+                    r.nativeDeadline=0; ping();
+                }
                 if(r.changedAt && Date.now()-r.changedAt>600 && !r.pending) {
                     r.changedAt=0; ping();
                 }
-                if(r.pending && Date.now()-r.pending.time>8000) {
+                if(r.pending && Date.now() >= (r.queryQuietUntil || 0) && Date.now()-r.pending.time>8000) {
                     status(navigator.onLine ? '연결을 복구하고 있습니다. 검색조건은 보관됩니다.' : '인터넷 연결을 기다리고 있습니다.');
                     if(!navigator.onLine) return;
                     let lastReload=0;
@@ -182,6 +192,48 @@ def _recovery_component():
         // Do not remove the watchdog during a Streamlit component remount.
     }
     """)
+
+
+@st.fragment
+def render_recovery_bridge():
+    def _receive_recovery():
+        request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
+        st.session_state["_recovery_ack"] = request.get("nonce")
+        if request.get("restore") and st.session_state.get("_recovery_fresh", True):
+            draft = request.get("draft") or {}
+            for name, suffix in recovery_prefixes.items():
+                values = draft.get(name)
+                if isinstance(values, list) and all(isinstance(v, str) for v in values):
+                    st.session_state["filter_selected_" + name] = list(dict.fromkeys(values))[:5000]
+                    generation_key = "filter_generation_" + suffix
+                    st.session_state[generation_key] += 1
+            if st.session_state.get("_recovery_fresh", True):
+                last = request.get("last")
+                if isinstance(last, dict):
+                    st.session_state["_last_search_conditions"] = last
+                    st.session_state["_restore_last_result"] = True
+            st.session_state["_recovery_fresh"] = False
+            st.session_state["_recovery_full_rerun"] = True
+        st.session_state["_recovery_fresh"] = False
+
+    recovery_prefixes = {"models":"model", "colors":"color", "dae":"dae", "so":"so", "owners":"owner"}
+    _recovery_component()(
+        key="inventory_recovery_bridge",
+        data={
+            "render_token": time.time_ns(),
+            "user": st.session_state.get("username", ""),
+            "draft": {name: st.session_state.get("filter_selected_" + name, []) for name in recovery_prefixes},
+            "last": st.session_state.get("_last_search_conditions"),
+            "fresh": st.session_state.get("_recovery_fresh", True),
+            "ack": st.session_state.get("_recovery_ack"),
+            "prefixes": {name: "filter_multiselect_" + suffix for name, suffix in recovery_prefixes.items()},
+        },
+        on_request_change=_receive_recovery,
+        height=0,
+    )
+    if st.session_state.pop("_recovery_full_rerun", False):
+        st.rerun(scope="app")
+
 
 import random
 import os
@@ -898,9 +950,9 @@ with st.sidebar: # 👈 기존에 있던 코드
 # [3단계] 메인 화면 라우팅 (대시보드 / 관리자 설정)
 # ==============================================================================
 # 🚀 [수정] session_state에 저장하지 않고 매번 신선한 도화지만 깔아줍니다!
-main_container = st.empty()
+main_container = st.container(key="inventory_main")
 
-with main_container.container():
+with main_container:
     if app_mode == "⚙️ 관리자 설정":
         # 🚀 [추가] 관리자 설정 모드일 때만 잔상 제거 CSS 작동
         st.markdown("""
@@ -2498,47 +2550,8 @@ with main_container.container():
                 st.session_state["tmp_selected_so"] = selected_so
                 st.session_state["tmp_selected_owners"] = selected_owners
 
-                def _receive_recovery():
-                    request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
-                    st.session_state["_recovery_ack"] = request.get("nonce")
-                    if request.get("restore") and st.session_state.get("_recovery_fresh", True):
-                        draft = request.get("draft") or {}
-                        for name, suffix in recovery_prefixes.items():
-                            values = draft.get(name)
-                            if isinstance(values, list) and all(isinstance(v, str) for v in values):
-                                st.session_state["filter_selected_" + name] = list(dict.fromkeys(values))[:5000]
-                                generation_key = "filter_generation_" + suffix
-                                st.session_state[generation_key] += 1
-                        if st.session_state.get("_recovery_fresh", True):
-                            last = request.get("last")
-                            if isinstance(last, dict):
-                                st.session_state["_last_search_conditions"] = last
-                                st.session_state["_restore_last_result"] = True
-                        st.session_state["_recovery_fresh"] = False
-                        st.session_state["_recovery_full_rerun"] = True
-                    st.session_state["_recovery_fresh"] = False
-
-                recovery_prefixes = {"models":"model", "colors":"color", "dae":"dae", "so":"so", "owners":"owner"}
-                _recovery_component()(
-                    key="inventory_recovery_bridge",
-                    data={
-                        "user": st.session_state.get("username", ""),
-                        "draft": {name: st.session_state.get("filter_selected_" + name, []) for name in recovery_prefixes},
-                        "last": st.session_state.get("_last_search_conditions"),
-                        "fresh": st.session_state.get("_recovery_fresh", True),
-                        "ack": st.session_state.get("_recovery_ack"),
-                        "prefixes": {name: "filter_multiselect_" + suffix for name, suffix in recovery_prefixes.items()},
-                    },
-                    on_request_change=_receive_recovery,
-                    height=0,
-                )
-                if st.session_state.pop("_recovery_full_rerun", False):
-                    st.rerun(scope="app")
-
             # 검색창 영역만 독립 실행
             search_filter_section()
-            if st.session_state.pop("_recovery_full_rerun", False):
-                st.rerun()
 
             # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
             #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
@@ -2547,7 +2560,14 @@ with main_container.container():
             # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
             st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
             
-            if st.button("🚀 조회하기", key="inventory_search_button", use_container_width=True):
+            search_requested = st.button("🚀 조회하기", key="inventory_search_button", use_container_width=True)
+            st.markdown(
+                '<div id="inventory-connection-status" role="status" aria-live="polite" '
+                'hidden style="background:#182c24;color:#E5E9F0;padding:10px 12px;'
+                'border-radius:8px;margin:4px 0;"></div>',
+                unsafe_allow_html=True,
+            )
+            if search_requested:
                 # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
                 s_models = st.session_state.get('tmp_selected_models', [])
                 s_colors = st.session_state.get('tmp_selected_colors', [])
@@ -3019,3 +3039,6 @@ with main_container.container():
             _btn_css.empty()
         except NameError:
             pass
+
+        # Mount recovery only after the entire result has finished rendering.
+        render_recovery_bridge()
