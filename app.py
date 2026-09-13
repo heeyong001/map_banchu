@@ -41,6 +41,7 @@ def _recovery_component():
     return components_v2.component("inventory_recovery", js=r"""
     export default function({data, setTriggerValue}) {
         const root = window;
+        root.__inventoryLoggingOut=false;
         const key = 'inventory-recovery-v1:' + location.pathname + ':' + data.user;
         let r = root.__inventoryRecovery;
         if (!r || r.key !== key) {
@@ -56,6 +57,7 @@ def _recovery_component():
             try { sessionStorage.setItem(key, JSON.stringify({draft:r.draft,last:r.last,time:Date.now()})); } catch (_) {}
         };
         const status = (text) => {
+            if (r.disposed && text) return;
             r.statusText=text;
             const el=document.getElementById('inventory-connection-status');
             if (el) { el.textContent=text; el.hidden=!text; }
@@ -66,6 +68,7 @@ def _recovery_component():
             r.nativeDeadline=0;
         }
         const ping = (restore=false) => {
+            if (r.disposed || window.__inventoryLoggingOut) return;
             if (Date.now() < (r.queryQuietUntil || 0)) return;
             if (document.hidden || r.pending || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
             const nonce = String(Date.now()) + Math.random();
@@ -118,7 +121,8 @@ def _recovery_component():
             };
             const resume = () => { if (!document.hidden) ping(); };
             const click = (event) => {
-                if (event.target.closest('button')?.textContent.includes('로그아웃')) {
+                if (event.target.closest('.st-key-inventory_logout_button')) {
+                    window.__inventoryLoggingOut=true;
                     try { sessionStorage.removeItem(key); } catch(_) {}
                     r.dispose(); root.__inventoryRecovery=null; status(''); return;
                 }
@@ -162,11 +166,12 @@ def _recovery_component():
                     if(Date.now()-lastReload>60000 && !r.probing && Date.now()-(r.lastProbe||0)>5000) {
                         r.probing=true; r.lastProbe=Date.now();
                         const controller=new AbortController();
+                        r.probeController=controller;
                         const deadline=setTimeout(()=>controller.abort(),4000);
                         // Reachability is only a reload guard; the component ACK proves app connectivity.
                         const health=new URL('_stcore/health', location.origin + location.pathname.replace(/\/?$/, '/'));
                         fetch(health,{cache:'no-store',signal:controller.signal}).then(response=>{
-                            if(!response.ok || !r.pending || document.hidden) return;
+                            if(r.disposed || window.__inventoryLoggingOut || !response.ok || !r.pending || document.hidden) return;
                             try {
                                 sessionStorage.setItem(key+':reload',String(Date.now()));
                                 sessionStorage.setItem(key+':attempts',String(attempts+1)); persist();
@@ -178,6 +183,9 @@ def _recovery_component():
                 }
             },300);
             r.dispose=()=>{
+                r.disposed=true;
+                r.pending=null;
+                r.probeController?.abort();
                 clearInterval(r.timer);
                 clearTimeout(r.interactionTimer);
                 document.removeEventListener('click',click,true);
@@ -234,6 +242,54 @@ def render_recovery_bridge():
     if st.session_state.pop("_recovery_full_rerun", False):
         st.rerun(scope="app")
 
+
+
+def _begin_logout():
+    # A callback runs before page routing; never rebuild the dashboard first.
+    st.session_state["_logout_pending"] = True
+    st.session_state["logged_in"] = False
+    st.session_state["_explicit_logged_out"] = True
+    st.session_state["needs_cookie_bake"] = False
+
+
+def _finish_logout():
+    result = st.session_state.get("logout_cookie_cleanup", {})
+    if result.get("done") is True:
+        st.session_state.clear()
+        st.session_state.update(logged_in=False, username="", role="",
+                                cookie_wait_count=99, _explicit_logged_out=True)
+
+
+@st.cache_resource
+def _logout_component():
+    import streamlit.components.v2 as components_v2
+    return components_v2.component("logout_cleanup", js=r"""
+    export default function({setStateValue}) {
+        window.__inventoryLoggingOut=true;
+        const recovery=window.__inventoryRecovery;
+        if(recovery?.dispose) recovery.dispose();
+        window.__inventoryRecovery=null;
+        const banner=document.getElementById('inventory-connection-status');
+        if(banner) {banner.hidden=true;banner.textContent='';}
+        try {
+            for(const key of Object.keys(sessionStorage)) {
+                if(key.startsWith('inventory-recovery-v1:'+location.pathname+':')) sessionStorage.removeItem(key);
+            }
+        } catch (_) {}
+        const names=['auth_token','auth_user','auth_role'];
+        let attempts=0;
+        const clear=()=>{
+            for(const name of names) document.cookie=name+'=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Strict';
+            const remaining=document.cookie.split(';').some(part=>names.includes(part.trim().split('=')[0]));
+            if(!remaining) {setStateValue('done',true);return;}
+            if(++attempts<5) timer=setTimeout(clear,200);
+            else setStateValue('failed',true);
+        };
+        let timer;
+        clear();
+        return ()=>clearTimeout(timer);
+    }
+    """)
 
 import random
 import os
@@ -716,6 +772,21 @@ def make_session_token(password_hash):
 # ==============================================================================
 # [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (오직 순수 Cookie 방식)
 # ==============================================================================
+if st.session_state.get("_logout_pending", False):
+    st.info("로그아웃 중입니다…")
+    cleanup = _logout_component()(
+        key="logout_cookie_cleanup",
+        on_done_change=_finish_logout,
+        on_failed_change=lambda: None,
+        height=0,
+    )
+    if cleanup.get("failed"):
+        st.error("로그인 쿠키를 삭제하지 못했습니다. 다시 시도해 주세요.")
+        if st.button("로그아웃 다시 시도"):
+            st.session_state.pop("logout_cookie_cleanup", None)
+            st.rerun()
+    st.stop()
+
 cookie_controller = CookieController()
 
 # 1. 기본 상태 초기화
@@ -725,7 +796,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['role'] = ""
 
 # 🚀 [해결] CSS를 뿌리기 전에, 쿠키가 있는지부터 먼저 열어보고 상태를 확정합니다!
-if not st.session_state['logged_in']:
+if not st.session_state['logged_in'] and not st.session_state.get('_explicit_logged_out', False):
     try:
         saved_token = cookie_controller.get('auth_token')
         saved_user = cookie_controller.get('auth_user')
@@ -765,7 +836,7 @@ css_to_inject += "</style>"
 st.markdown(css_to_inject, unsafe_allow_html=True)
 
 # 2. 쿠키로 복구 
-if not st.session_state['logged_in']:
+if not st.session_state['logged_in'] and not st.session_state.get('_explicit_logged_out', False):
     try:
         saved_token = cookie_controller.get('auth_token')
         saved_user = cookie_controller.get('auth_user')
@@ -884,6 +955,7 @@ if not st.session_state['logged_in']:
                         st.stop()
                     
                     if not user_match.empty and check_hashes(password, user_match.iloc[0]['password']):
+                        st.session_state['_explicit_logged_out'] = False
                         st.session_state['logged_in'] = True
                         st.session_state['username'] = username
                         st.session_state['role'] = user_match.iloc[0]['role']
@@ -929,18 +1001,8 @@ with st.container(key="auth_cookie_write_slot"):
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
 with st.sidebar: # 👈 기존에 있던 코드
     st.success(f"👤 **{st.session_state['username']}**님 접속중")
-    if st.button("🚪 로그아웃", use_container_width=True):
-        st.session_state.clear()
-        
-        cookie_controller.remove('auth_token')
-        cookie_controller.remove('auth_user')
-        cookie_controller.remove('auth_role')
-
-        # 🚀 방금 쿠키를 지웠으므로 쿠키 대기 루프(약 2.7초)를 건너뜁니다.
-        st.session_state['cookie_wait_count'] = 99
-
-        time.sleep(0.5) 
-        st.rerun()
+    st.button("🚪 로그아웃", key="inventory_logout_button", on_click=_begin_logout,
+              use_container_width=True)
 
     menu = ["📊 대시보드"]
     # 관리자 권한(admin)일 때만 관리자 설정 메뉴가 보입니다.
