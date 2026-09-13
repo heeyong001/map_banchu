@@ -906,22 +906,25 @@ if not st.session_state['logged_in']:
 # ==============================================================================
 # 🚀 [무중단 쿠키 굽기] 대시보드가 화면에 열린 상태에서, 방해 없이 조용히 쿠키를 저장합니다!
 # ==============================================================================
-if st.session_state.get('needs_cookie_bake', False):
-    KST = timezone(timedelta(hours=9))
-    now = datetime.now(KST)
-    next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    seconds_until_midnight = int((next_midnight - now).total_seconds())
+# Keep a permanent parent slot: one-time cookie components must not shift
+# the dashboard's delta path on the first search after login.
+with st.container(key="auth_cookie_write_slot"):
+    if st.session_state.get('needs_cookie_bake', False):
+        KST = timezone(timedelta(hours=9))
+        now = datetime.now(KST)
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        seconds_until_midnight = int((next_midnight - now).total_seconds())
 
-    if getattr(cookie_controller, '_CookieController__cookies', None) is None:
-        cookie_controller._CookieController__cookies = {}
+        if getattr(cookie_controller, '_CookieController__cookies', None) is None:
+            cookie_controller._CookieController__cookies = {}
     
-    # 여기서 쿠키를 브라우저로 쏩니다. 화면이 넘어간 상태라 절대 끊기거나 증발하지 않습니다.
-    cookie_controller.set('auth_token', st.session_state['user_pw_hash'], max_age=seconds_until_midnight, path='/')
-    cookie_controller.set('auth_user', st.session_state['username'], max_age=seconds_until_midnight, path='/')
-    cookie_controller.set('auth_role', st.session_state['role'], max_age=seconds_until_midnight, path='/') 
+        # 여기서 쿠키를 브라우저로 쏩니다. 화면이 넘어간 상태라 절대 끊기거나 증발하지 않습니다.
+        cookie_controller.set('auth_token', st.session_state['user_pw_hash'], max_age=seconds_until_midnight, path='/')
+        cookie_controller.set('auth_user', st.session_state['username'], max_age=seconds_until_midnight, path='/')
+        cookie_controller.set('auth_role', st.session_state['role'], max_age=seconds_until_midnight, path='/') 
     
-    # 저장이 끝났으므로 신호를 끕니다.
-    st.session_state['needs_cookie_bake'] = False
+        # 저장이 끝났으므로 신호를 끕니다.
+        st.session_state['needs_cookie_bake'] = False
 
 # --- 로그인 성공 시 나타나는 사이드바 메뉴 ---
 with st.sidebar: # 👈 기존에 있던 코드
