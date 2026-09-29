@@ -28,7 +28,27 @@ def _owner_enter_component():
                 setTriggerValue('keyword', keyword);
             };
             document.addEventListener('keydown', onKeyDown, true);
-            return () => document.removeEventListener('keydown', onKeyDown, true);
+            const values = new Map();
+            const closeChangedSelection = () => {
+                document.querySelectorAll('[data-testid="stMultiSelect"]').forEach(box => {
+                    const input = box.querySelector('input');
+                    if (!input || !box.closest('[class*="st-key-filter_multiselect_"]')) return;
+                    const signature = JSON.stringify(Array.from(box.querySelectorAll('[data-baseweb="tag"]')).map(x => x.textContent));
+                    if (values.has(input) && values.get(input) !== signature) {
+                        // BaseWeb closes its portal via an outside pointer event.
+                        document.body.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                        document.body.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                        document.body.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                        input.blur();
+                    }
+                    values.set(input, signature);
+                });
+            };
+            closeChangedSelection();
+            const observer = new MutationObserver(closeChangedSelection);
+            observer.observe(document.body, {childList:true, subtree:true});
+            return () => { observer.disconnect(); document.removeEventListener('keydown', onKeyDown, true); };
+
         }
         """,
     )
@@ -42,7 +62,7 @@ def _recovery_component():
     export default function({data, setTriggerValue}) {
         const root = window;
         root.__inventoryLoggingOut=false;
-        const key = 'inventory-recovery-v1:' + location.pathname + ':' + data.user;
+        const key = 'inventory-recovery-v2:' + location.pathname + ':' + data.user;
         let r = root.__inventoryRecovery;
         if (!r || r.key !== key) {
             if (r?.dispose) r.dispose();
@@ -87,7 +107,7 @@ def _recovery_component():
             r.loaded=true;
             if (data.fresh && r.saved && Date.now()-r.saved.time < 86400000) {
                 r.draft=r.saved.draft; r.last=r.saved.last; ping(true);
-            } else { persist(); ping(); }
+            } else { persist(); }
         }
         if (!r.timer) {
             const readDraft = () => {
@@ -116,10 +136,10 @@ def _recovery_component():
                     r.captureUntil=Date.now()+1500;
                     // Probe connectivity without restoring/rewriting widget values.
                     clearTimeout(r.interactionTimer);
-                    r.interactionTimer=setTimeout(()=>ping(),700);
+                    // Native widget events already contact the server.
                 }
             };
-            const resume = () => { if (!document.hidden) ping(); };
+            const resume = () => { if (!document.hidden && navigator.onLine) status(''); };
             const click = (event) => {
                 if (event.target.closest('.st-key-inventory_logout_button')) {
                     window.__inventoryLoggingOut=true;
@@ -150,37 +170,15 @@ def _recovery_component():
                 if (!r.pending && Date.now() < (r.captureUntil || 0)) changed();
                 if (r.statusText) status(r.statusText);
                 if (r.nativeDeadline && Date.now()>r.nativeDeadline) {
-                    r.nativeDeadline=0; ping();
+                    r.nativeDeadline=0;
                 }
                 if(r.changedAt && Date.now()-r.changedAt>600 && !r.pending) {
-                    r.changedAt=0; ping();
+                    r.changedAt=0;
                 }
-                if(r.pending && Date.now() >= (r.queryQuietUntil || 0) && Date.now()-r.pending.time>8000) {
-                    status(navigator.onLine ? '연결을 복구하고 있습니다. 검색조건은 보관됩니다.' : '인터넷 연결을 기다리고 있습니다.');
-                    if(!navigator.onLine) return;
-                    let lastReload=0;
-                    try { lastReload=Number(sessionStorage.getItem(key+':reload')||0); } catch(_) {}
-                    let attempts=0;
-                    try { attempts=Number(sessionStorage.getItem(key+':attempts')||0); } catch(_) {}
-                    if(attempts>=2) { status('연결을 복구하지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.'); return; }
-                    if(Date.now()-lastReload>60000 && !r.probing && Date.now()-(r.lastProbe||0)>5000) {
-                        r.probing=true; r.lastProbe=Date.now();
-                        const controller=new AbortController();
-                        r.probeController=controller;
-                        const deadline=setTimeout(()=>controller.abort(),4000);
-                        // Reachability is only a reload guard; the component ACK proves app connectivity.
-                        const health=new URL('_stcore/health', location.origin + location.pathname.replace(/\/?$/, '/'));
-                        fetch(health,{cache:'no-store',signal:controller.signal}).then(response=>{
-                            if(r.disposed || window.__inventoryLoggingOut || !response.ok || !r.pending || document.hidden) return;
-                            try {
-                                sessionStorage.setItem(key+':reload',String(Date.now()));
-                                sessionStorage.setItem(key+':attempts',String(attempts+1)); persist();
-                            } catch(_) { status('자동 복구를 위해 새로고침해 주세요.'); return; }
-                            location.reload();
-                        }).catch(()=>status('서버 연결을 기다리고 있습니다. 검색조건은 보관됩니다.'))
-                        .finally(()=>{clearTimeout(deadline);r.probing=false;});
-                    }
-                }
+                // A delayed component callback is not evidence of a lost socket.
+                // Streamlit owns reconnection; never reload a live page here.
+                if (!navigator.onLine) status('인터넷 연결을 기다리고 있습니다. 검색조건은 유지됩니다.');
+                else if (r.statusText) status('');
             },300);
             r.dispose=()=>{
                 r.disposed=true;
@@ -217,8 +215,7 @@ def render_recovery_bridge():
                 values = draft.get(name)
                 if isinstance(values, list) and all(isinstance(v, str) for v in values):
                     st.session_state["filter_selected_" + name] = list(dict.fromkeys(values))[:5000]
-                    generation_key = "filter_generation_" + suffix
-                    st.session_state[generation_key] += 1
+                    st.session_state["filter_multiselect_" + suffix + "_0"] = st.session_state["filter_selected_" + name]
             if st.session_state.get("_recovery_fresh", True):
                 last = request.get("last")
                 if isinstance(last, dict):
@@ -281,7 +278,7 @@ def _logout_component():
         if(banner) {banner.hidden=true;banner.textContent='';}
         try {
             for(const key of Object.keys(sessionStorage)) {
-                if(key.startsWith('inventory-recovery-v1:'+location.pathname+':')) sessionStorage.removeItem(key);
+                if(key.startsWith('inventory-recovery-v2:'+location.pathname+':')) sessionStorage.removeItem(key);
             }
         } catch (_) {}
         const names=['auth_token','auth_user','auth_role'];
@@ -738,27 +735,7 @@ st.markdown("""
     }
             
     </style>
-    <img src="error.png" style="display:none;" onerror="
-        if (!window.parent.hasVisibilityListener) {
-            window.parent.hasVisibilityListener = true;
-            var hiddenTime = 0;
-            window.parent.document.addEventListener('visibilitychange', function() {
-                if (window.parent.document.visibilityState === 'hidden') {
-                    // 화면을 벗어난 시간 기록
-                    hiddenTime = new Date().getTime();
-                } else if (window.parent.document.visibilityState === 'visible') {
-                    // 화면으로 돌아왔을 때 계산
-                    if (hiddenTime > 0) {
-                        var awayTime = new Date().getTime() - hiddenTime;
-                        if (awayTime > 180000) { // 3분(180,000ms) 이상 지났다면?
-                            // 회원님 예상 1&2 완벽 구현: 화면을 강제 새로고침하여 통신망을 복구하고 쿠키를 다시 읽게 만듭니다!
-                            window.parent.location.reload(); 
-                        }
-                    }
-                }
-            });
-        }
-    ">
+
 """, unsafe_allow_html=True)
 
 # ==============================================================================
@@ -2362,86 +2339,25 @@ with main_container:
                         st.session_state[generation_key] = 0
 
                 # --------------------------------------------------------------
-                # 5. 멀티셀렉트 변경값 저장 후 위젯 세대 교체
-                #
-                # Streamlit 기본 multiselect는 항목 선택 후에도 목록을
-                # 계속 열어 둡니다.
-                #
-                # 선택 직후 generation 값을 올리면 다음 fragment 실행에서
-                # 새로운 key의 multiselect가 생성됩니다.
-                #
-                # 결과:
-                # - 드롭다운 팝오버는 닫힘
-                # - 선택된 값은 검색바 내부 태그로 유지
-                # - 검색바를 다시 누르면 추가 선택 가능
-                # --------------------------------------------------------------
-                def _commit_and_close_multiselect(
-                    widget_key,
-                    selected_key,
-                    generation_key,
-                ):
-                    # 방금 멀티셀렉트에서 선택된 전체 값 저장
-                    new_values = list(
-                        st.session_state.get(widget_key, [])
-                    )
+                # Keep widget identity stable across fragment/full reruns.
+                def _commit_and_close_multiselect(widget_key, selected_key, generation_key):
+                    st.session_state[selected_key] = list(st.session_state.get(widget_key, []))
+                    st.session_state["_recovery_fresh"] = False
 
-                    st.session_state[selected_key] = new_values
-
-                    # 이전 세대 위젯 상태 제거
-                    if widget_key in st.session_state:
-                        del st.session_state[widget_key]
-
-                    # 다음 fragment 실행에서 새 위젯 key 사용
-                    st.session_state[generation_key] = (
-                        st.session_state.get(generation_key, 0) + 1
-                    )
-
-                # --------------------------------------------------------------
-                # 6. 자동 닫힘 멀티셀렉트 공통 함수
-                # --------------------------------------------------------------
-                def _closed_multiselect(
-                    label,
-                    options,
-                    selected_key,
-                    generation_key,
-                    widget_prefix,
-                    placeholder,
-                ):
-                    # 현재 옵션에 존재하는 선택값만 유지
-                    current_values = [
-                        value
-                        for value in st.session_state.get(selected_key, [])
-                        if value in options
-                    ]
-
+                def _closed_multiselect(label, options, selected_key, generation_key,
+                                        widget_prefix, placeholder):
+                    current_values = [v for v in st.session_state.get(selected_key, []) if v in options]
                     st.session_state[selected_key] = current_values
-
-                    generation = st.session_state.get(
-                        generation_key,
-                        0,
-                    )
-
-                    # 선택할 때마다 generation이 변경되어
-                    # 새로운 멀티셀렉트 위젯으로 교체됩니다.
-                    widget_key = f"{widget_prefix}_{generation}"
-
+                    widget_key = f"{widget_prefix}_0"
+                    # Reconcile only before widget creation, including linked option changes.
+                    if list(st.session_state.get(widget_key, [])) != current_values or widget_key not in st.session_state:
+                        st.session_state[widget_key] = current_values
                     st.multiselect(
-                        label,
-                        options=options,
-                        default=current_values,
-                        placeholder=placeholder,
-                        key=widget_key,
+                        label, options=options, placeholder=placeholder, key=widget_key,
                         on_change=_commit_and_close_multiselect,
-                        args=(
-                            widget_key,
-                            selected_key,
-                            generation_key,
-                        ),
+                        args=(widget_key, selected_key, generation_key),
                     )
-
-                    return list(
-                        st.session_state.get(selected_key, [])
-                    )
+                    return list(st.session_state[selected_key])
 
                 # --------------------------------------------------------------
                 # 7. 첫 번째 검색줄: 모델 / 대분류 / 색상
@@ -2586,15 +2502,8 @@ with main_container:
                             f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
                             if matches else "현재 조건에서 일치하는 보유처가 없습니다."
                         )
-                        # 일반 항목 선택과 동일하게 세대를 교체하여 검색어/팝업 정리.
-                        generation = st.session_state["filter_generation_owner"]
-                        st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
-                        st.session_state["filter_generation_owner"] = generation + 1
-
-                    if owner_options_changed or removed_count:
-                        generation = st.session_state["filter_generation_owner"]
-                        st.session_state.pop(f"filter_multiselect_owner_{generation}", None)
-                        st.session_state["filter_generation_owner"] = generation + 1
+                        st.session_state["filter_multiselect_owner_0"] = current + additions
+                        st.session_state["_recovery_fresh"] = False
 
                     selected_owners = _closed_multiselect(
                         label="보유처",
@@ -2607,8 +2516,7 @@ with main_container:
                     _owner_enter_component()(
                         key="filter_owner_enter",
                         data={"options": linked_owner_options, "widget_key": (
-                            "filter_multiselect_owner_"
-                            + str(st.session_state["filter_generation_owner"])
+                            "filter_multiselect_owner_0"
                         )},
                         on_keyword_change=_select_owners_by_keyword,
                         height=0,
@@ -2646,6 +2554,7 @@ with main_container:
                 unsafe_allow_html=True,
             )
             if search_requested:
+                st.session_state["_recovery_fresh"] = False
                 # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
                 s_models = st.session_state.get('tmp_selected_models', [])
                 s_colors = st.session_state.get('tmp_selected_colors', [])
