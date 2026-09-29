@@ -1569,6 +1569,8 @@ with main_container:
             "옐로우":     "#F5D000",
             "오렌지":     "#FF7F00",
             "레드":       "#E01B24",
+            "버건디":     "#800020",  # 와인색
+            "와인":       "#800020",
             "핑크":       "#FFAFC5",
             "브라운":     "#7B4B2A",
             # --- 퍼플 계열 ---
@@ -1617,6 +1619,14 @@ with main_container:
 
             text_c = '#000000' if _get_luminance(hex_c) > 0.6 else '#FFFFFF'
             return hex_c, text_c
+
+        def is_address_missing(address, owner=""):
+            # 반추 사무실은 지도에 고정 주소를 사용하는 기존 규칙을 유지합니다.
+            if "반추" in str(owner):
+                return False
+            if pd.isna(address):
+                return True
+            return str(address).strip().casefold() in {"", "nan", "none", "null", "<na>", "-", "미등록", "주소 미등록"}
 
         @st.cache_data(ttl="12h", show_spinner=False)
         def load_data_optimized(file, file_version=None):
@@ -2802,13 +2812,19 @@ with main_container:
                                 td_style = "border:1px solid #aaa; padding:5px; text-align:center;"
                                 
                                 uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
-                                popup_title = f"{name}"
+                                missing_address = all(
+                                    is_address_missing(value, name)
+                                    for value in g.get('사업장주소', pd.Series([None]))
+                                )
+                                popup_title = f"{name}" + (" · 주소 미등록" if missing_address else "")
+                                if missing_address:
+                                    border_style += " border: 2px dashed #F59E0B;"
                                 
                                 address_txt = ""
                                 if is_office:
                                     address_txt = "서울특별시 영등포구 경인로775 에이스하이테크 417호"
-                                elif '사업장주소' in g.columns and pd.notna(g['사업장주소'].iloc[0]) and str(g['사업장주소'].iloc[0]).strip() != "":
-                                    address_txt = str(g['사업장주소'].iloc[0])
+                                elif not missing_address:
+                                    address_txt = next(str(value).strip() for value in g['사업장주소'] if not is_address_missing(value, name))
                                 else:
                                     address_txt = "주소 미등록"
 
@@ -2975,6 +2991,8 @@ with main_container:
                         
                         list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
 
+                        if any(is_address_missing(row.get('사업장주소'), row.get(real_boyu, '')) for _, row in list_df.iterrows()):
+                            st.caption("주소 미등록 거래처는 목록에 별도 표시됩니다. 지도에서는 주황색 점선 테두리로 구분합니다.")
                         with st.container(height=500):
                             for idx, row in list_df.head(100).iterrows():
                                 
@@ -3007,7 +3025,8 @@ with main_container:
                                 
                                 is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
                                 prefix = "✅ " if is_selected else ""
-                                button_label = f"{prefix}{nm}  :  {det}"
+                                address_badge = " · 주소 미등록" if is_address_missing(row.get('사업장주소'), nm) else ""
+                                button_label = f"{prefix}{nm}{address_badge}  :  {det}"
                                 
                                 if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
                                     st.session_state['selected_idx'] = idx
