@@ -11,6 +11,38 @@ def _owner_enter_component():
         js="""
         export default function({data, setTriggerValue}) {
             const selector = '.st-key-' + CSS.escape(data.widget_key);
+            const filterSelector = '[class*="st-key-filter_multiselect_"]';
+            // Close after BaseWeb has finished its own selection event. Observing
+            // tags alone can miss changes when Streamlit remounts the component.
+            const closeAfterSelection = (input) => {
+                const box = input?.closest(filterSelector);
+                if (!box) return;
+                setTimeout(() => {
+                    const current = input.isConnected ? input : box.querySelector('input');
+                    if (current) current.blur();
+                    document.body.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+                    document.body.dispatchEvent(new MouseEvent('mouseup', {bubbles:true}));
+                    document.body.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+                }, 0);
+            };
+            const onOptionClick = (event) => {
+                if (!(event.target instanceof Element)) return;
+                const option = event.target.closest('[role="option"], [data-baseweb="menu"] li');
+                if (!option || option.getAttribute('aria-disabled') === 'true') return;
+                const input = document.activeElement;
+                if (input instanceof HTMLInputElement && input.closest(filterSelector)) {
+                    closeAfterSelection(input);
+                }
+            };
+            const onFilterEnter = (event) => {
+                if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.repeat) return;
+                const input = event.target;
+                if (input instanceof HTMLInputElement && input.closest(filterSelector) &&
+                    input.getAttribute('aria-expanded') === 'true') closeAfterSelection(input);
+            };
+            document.addEventListener('click', onOptionClick, true);
+            document.addEventListener('keydown', onFilterEnter, true);
+
             const onKeyDown = (event) => {
                 const input = event.target;
                 if (!(input instanceof HTMLInputElement) ||
@@ -47,7 +79,12 @@ def _owner_enter_component():
             closeChangedSelection();
             const observer = new MutationObserver(closeChangedSelection);
             observer.observe(document.body, {childList:true, subtree:true});
-            return () => { observer.disconnect(); document.removeEventListener('keydown', onKeyDown, true); };
+            return () => {
+                observer.disconnect();
+                document.removeEventListener('keydown', onKeyDown, true);
+                document.removeEventListener('keydown', onFilterEnter, true);
+                document.removeEventListener('click', onOptionClick, true);
+            };
 
         }
         """,
@@ -2991,8 +3028,6 @@ with main_container:
                         
                         list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
 
-                        if any(is_address_missing(row.get('사업장주소'), row.get(real_boyu, '')) for _, row in list_df.iterrows()):
-                            st.caption("주소 미등록 거래처는 목록에 별도 표시됩니다. 지도에서는 주황색 점선 테두리로 구분합니다.")
                         with st.container(height=500):
                             for idx, row in list_df.head(100).iterrows():
                                 
