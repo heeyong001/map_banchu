@@ -2675,6 +2675,35 @@ with main_container:
             # 검색창 영역만 독립 실행
             search_filter_section()
 
+            # 검색조건 초기화 버튼 전용 디자인
+            st.markdown("""
+                <style>
+                .st-key-inventory_reset_filters button {
+                    height: 20px !important;
+                    min-height: 20px !important;
+                    padding: 2px 10px !important;
+
+                    background-color: #243A30 !important;
+                    color: #CBD8D0 !important;
+                    border: 1px solid #728A7C !important;
+                    border-radius: 6px !important;
+                }
+
+                .st-key-inventory_reset_filters button p {
+                    color: #CBD8D0 !important;
+                    font-size: 13px !important;
+                }
+
+                .st-key-inventory_reset_filters button:hover,
+                .st-key-inventory_reset_filters button:focus,
+                .st-key-inventory_reset_filters button:active {
+                    background-color: #345044 !important;
+                    border-color: #A9BDB2 !important;
+                    box-shadow: none !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
             st.button(
                 "검색조건 전체 초기화",
                 key="inventory_reset_filters",
