@@ -2679,8 +2679,8 @@ with main_container:
             st.markdown("""
                 <style>
                 .st-key-inventory_reset_filters button {
-                    height: 20px !important;
-                    min-height: 20px !important;
+                    height: 15px !important;
+                    min-height: 15px !important;
                     padding: 2px 10px !important;
 
                     background-color: #243A30 !important;
