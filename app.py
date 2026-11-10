@@ -113,32 +113,72 @@ def _recovery_component():
         const persist = () => {
             try { sessionStorage.setItem(key, JSON.stringify({draft:r.draft,last:r.last,time:Date.now()})); } catch (_) {}
         };
-        const status = (text) => {
+        const status = (text, offerReload=false) => {
             if (r.disposed && text) return;
-            r.statusText=text;
-            const el=document.getElementById('inventory-connection-status');
-            if (el) { el.textContent=text; el.hidden=!text; }
+            r.statusText = text;
+            r.offerReload = offerReload;
+            const el = document.getElementById('inventory-connection-status');
+            if (!el) return;
+            const signature = JSON.stringify([text, offerReload]);
+            if (el.dataset.recoveryStatus === signature) return;
+            el.dataset.recoveryStatus = signature;
+            el.replaceChildren();
+            el.hidden = !text;
+            if (!text) return;
+            const label = document.createElement('span');
+            label.textContent = text;
+            el.appendChild(label);
+            if (offerReload) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = '연결 복구';
+                button.style.cssText = 'margin-left:8px;min-height:44px;cursor:pointer';
+                button.onclick = () => {
+                    // 기존 sessionStorage 복원 로직이 새 세션에서 사용합니다.
+                    persist();
+                    location.reload();
+                };
+                el.appendChild(button);
+            }
         };
         // Native reruns also prove connectivity, without interrupting an active query.
         if (r.renderToken !== data.render_token) {
             r.renderToken=data.render_token;
             r.nativeDeadline=0;
         }
-        const ping = (restore=false) => {
+        const ping = (restore=false, resume=false) => {
             if (r.disposed || window.__inventoryLoggingOut) return;
             if (Date.now() < (r.queryQuietUntil || 0)) return;
-            if (document.hidden || r.pending || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
+            if (document.hidden || !navigator.onLine || r.pending) return;
+            if (!document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
             const nonce = String(Date.now()) + Math.random();
-            r.pending={nonce,time:Date.now()};
-            r.send('request',{nonce,restore,draft:r.draft,last:r.last});
+            r.pending = {nonce, time: Date.now()};
+            r.send('request', {
+                nonce, restore, resume, draft: r.draft, last: r.last
+            });
         };
+        if (data.reset_token && r.resetToken !== data.reset_token) {
+            r.resetToken = data.reset_token;
+            r.ownerIntent = null;
+            r.pending = null;
+            r.saved = null;
+            r.loaded = true;
+            r.draft = {...data.draft};
+            r.last = null;
+            r.changedAt = 0;
+            r.captureUntil = 0;
+            r.queryQuietUntil = 0;
+            clearTimeout(r.resumeTimer);
+            status('');
+            persist();
+        }
         if (r.ownerIntent && r.ownerIntent.every(x => data.draft.owners.includes(x))) r.ownerIntent=null;
         if (r.pending && data.ack === r.pending.nonce) {
             r.pending=null; status('');
             try { sessionStorage.removeItem(key+':attempts'); } catch(_) {}
-            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; if(data.last) r.last=data.last; persist();
+            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; r.last = data.last ?? null; persist();
         } else if (!r.pending && r.loaded) {
-            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; if(data.last) r.last=data.last; persist();
+            r.draft={...data.draft}; if(r.ownerIntent) r.draft.owners=r.ownerIntent; r.last = data.last ?? null; persist();
         }
         if (!r.loaded) {
             r.loaded=true;
@@ -176,7 +216,21 @@ def _recovery_component():
                     // Native widget events already contact the server.
                 }
             };
-            const resume = () => { if (!document.hidden && navigator.onLine) status(''); };
+            const resume = () => {
+                if (document.hidden || r.disposed || window.__inventoryLoggingOut) return;
+                if (!navigator.onLine) {
+                    status('인터넷 연결을 기다리고 있습니다. 검색조건은 유지됩니다.');
+                    return;
+                }
+                clearTimeout(r.resumeTimer);
+                // 조회 처리 중에는 복구 요청으로 실행을 중단하지 않습니다.
+                const wait = Math.max(0, (r.queryQuietUntil || 0) - Date.now());
+                r.resumeTimer = setTimeout(() => {
+                    if (document.hidden || r.disposed || window.__inventoryLoggingOut) return;
+                    status('앱 연결을 확인하고 있습니다…');
+                    ping(false, true);
+                }, wait + 250);
+            };
             const click = (event) => {
                 if (event.target.closest('.st-key-inventory_logout_button')) {
                     window.__inventoryLoggingOut=true;
@@ -205,7 +259,7 @@ def _recovery_component():
             r.timer=setInterval(()=>{
                 if(document.hidden || !document.querySelector('[class*="st-key-filter_multiselect_model_"]')) return;
                 if (!r.pending && Date.now() < (r.captureUntil || 0)) changed();
-                if (r.statusText) status(r.statusText);
+                if (r.statusText) status(r.statusText, r.offerReload);
                 if (r.nativeDeadline && Date.now()>r.nativeDeadline) {
                     r.nativeDeadline=0;
                 }
@@ -214,8 +268,12 @@ def _recovery_component():
                 }
                 // A delayed component callback is not evidence of a lost socket.
                 // Streamlit owns reconnection; never reload a live page here.
-                if (!navigator.onLine) status('인터넷 연결을 기다리고 있습니다. 검색조건은 유지됩니다.');
-                else if (r.statusText) status('');
+                if (!navigator.onLine) {
+                    status('인터넷 연결을 기다리고 있습니다. 검색조건은 유지됩니다.');
+                } else if (r.pending && Date.now() - r.pending.time > 20000) {
+                    status('서버 응답이 지연되고 있습니다. 계속 기다리거나 연결을 복구하세요.', true);
+                }
+                // 정상 응답 수신 시 기존 ack 분기가 status('')로 안내를 지웁니다.
             },300);
             r.dispose=()=>{
                 r.disposed=true;
@@ -223,6 +281,7 @@ def _recovery_component():
                 r.probeController?.abort();
                 clearInterval(r.timer);
                 clearTimeout(r.interactionTimer);
+                clearTimeout(r.resumeTimer);
                 document.removeEventListener('click',click,true);
                 document.removeEventListener('click',interaction,true);
                 document.removeEventListener('keydown',interaction,true);
@@ -246,6 +305,8 @@ def render_recovery_bridge():
             return
         request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
         st.session_state["_recovery_ack"] = request.get("nonce")
+        if request.get("resume"):
+            st.session_state["_recovery_full_rerun"] = True
         if request.get("restore") and st.session_state.get("_recovery_fresh", True):
             draft = request.get("draft") or {}
             for name, suffix in recovery_prefixes.items():
@@ -272,6 +333,7 @@ def render_recovery_bridge():
             "last": st.session_state.get("_last_search_conditions"),
             "fresh": st.session_state.get("_recovery_fresh", True),
             "ack": st.session_state.get("_recovery_ack"),
+            "reset_token": st.session_state.get("_filter_reset_token"),
             "prefixes": {name: "filter_multiselect_" + suffix for name, suffix in recovery_prefixes.items()},
         },
         on_request_change=_receive_recovery,
@@ -280,6 +342,33 @@ def render_recovery_bridge():
     if st.session_state.pop("_recovery_full_rerun", False):
         st.rerun(scope="app")
 
+
+
+def reset_inventory_filters():
+    state = st.session_state
+    for name, suffix in {
+        "models": "model", "colors": "color", "dae": "dae",
+        "so": "so", "owners": "owner",
+    }.items():
+        state["filter_selected_" + name] = []
+        state["tmp_selected_" + name] = []
+        state[f"filter_multiselect_{suffix}_0"] = []
+
+    state["filtered_data"] = None
+    state["selected_idx"] = None
+    state["clicked_store_name"] = None
+    state["search_clicked"] = False
+    state["_last_search_conditions"] = None
+    state["_restore_last_result"] = False
+    state["_recovery_fresh"] = False
+    state["_filter_reset_token"] = str(time.time_ns())
+    state.pop("filter_owner_keyword_message", None)
+    state.pop("filter_owner_option_signature", None)
+
+    # 검색용 파라미터만 삭제합니다.
+    for key in ("m", "d", "c"):
+        if key in st.query_params:
+            del st.query_params[key]
 
 
 def _begin_logout():
@@ -2585,6 +2674,13 @@ with main_container:
 
             # 검색창 영역만 독립 실행
             search_filter_section()
+
+            st.button(
+                "검색조건 전체 초기화",
+                key="inventory_reset_filters",
+                on_click=reset_inventory_filters,
+                use_container_width=True,
+            )
 
             # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
             #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
