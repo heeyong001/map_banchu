@@ -2678,10 +2678,13 @@ with main_container:
             # 검색조건 초기화 버튼 전용 디자인
             st.markdown("""
                 <style>
-                .st-key-inventory_reset_filters button {
-                    height: 15px !important;
-                    min-height: 15px !important;
-                    padding: 2px 10px !important;
+                div.st-key-inventory_reset_filters div.stButton > button {
+                    height: 28px !important;
+                    min-height: 28px !important;
+                    padding: 0px 10px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
 
                     background-color: #243A30 !important;
                     color: #CBD8D0 !important;
@@ -2689,14 +2692,16 @@ with main_container:
                     border-radius: 6px !important;
                 }
 
-                .st-key-inventory_reset_filters button p {
+                div.st-key-inventory_reset_filters div.stButton > button p {
                     color: #CBD8D0 !important;
                     font-size: 13px !important;
+                    margin: 0 !important;
+                    line-height: 16px !important;
                 }
 
-                .st-key-inventory_reset_filters button:hover,
-                .st-key-inventory_reset_filters button:focus,
-                .st-key-inventory_reset_filters button:active {
+                div.st-key-inventory_reset_filters div.stButton > button:hover,
+                div.st-key-inventory_reset_filters div.stButton > button:focus,
+                div.st-key-inventory_reset_filters div.stButton > button:active {
                     background-color: #345044 !important;
                     border-color: #A9BDB2 !important;
                     box-shadow: none !important;
