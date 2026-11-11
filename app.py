@@ -2175,6 +2175,47 @@ with main_container:
                 st.rerun()
         
         if df is not None:
+            # 검색조건 초기화 버튼 전용 디자인
+            st.markdown("""
+                <style>
+                div.st-key-inventory_reset_filters div.stButton > button {
+                    height: 28px !important;
+                    min-height: 28px !important;
+                    padding: 0px 10px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+
+                    background-color: #243A30 !important;
+                    color: #CBD8D0 !important;
+                    border: 1px solid #728A7C !important;
+                    border-radius: 6px !important;
+                }
+
+                div.st-key-inventory_reset_filters div.stButton > button p {
+                    color: #CBD8D0 !important;
+                    font-size: 13px !important;
+                    margin: 0 !important;
+                    line-height: 16px !important;
+                }
+
+                div.st-key-inventory_reset_filters div.stButton > button:hover,
+                div.st-key-inventory_reset_filters div.stButton > button:focus,
+                div.st-key-inventory_reset_filters div.stButton > button:active {
+                    background-color: #345044 !important;
+                    border-color: #A9BDB2 !important;
+                    box-shadow: none !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
+            st.button(
+                "검색조건 전체 초기화",
+                key="inventory_reset_filters",
+                on_click=reset_inventory_filters,
+                use_container_width=True,
+            )
+
             # 컬럼 매핑
             col_map = {}
             for col in df.columns:
@@ -2674,47 +2715,6 @@ with main_container:
 
             # 검색창 영역만 독립 실행
             search_filter_section()
-
-            # 검색조건 초기화 버튼 전용 디자인
-            st.markdown("""
-                <style>
-                div.st-key-inventory_reset_filters div.stButton > button {
-                    height: 28px !important;
-                    min-height: 28px !important;
-                    padding: 0px 10px !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-
-                    background-color: #243A30 !important;
-                    color: #CBD8D0 !important;
-                    border: 1px solid #728A7C !important;
-                    border-radius: 6px !important;
-                }
-
-                div.st-key-inventory_reset_filters div.stButton > button p {
-                    color: #CBD8D0 !important;
-                    font-size: 13px !important;
-                    margin: 0 !important;
-                    line-height: 16px !important;
-                }
-
-                div.st-key-inventory_reset_filters div.stButton > button:hover,
-                div.st-key-inventory_reset_filters div.stButton > button:focus,
-                div.st-key-inventory_reset_filters div.stButton > button:active {
-                    background-color: #345044 !important;
-                    border-color: #A9BDB2 !important;
-                    box-shadow: none !important;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
-            st.button(
-                "검색조건 전체 초기화",
-                key="inventory_reset_filters",
-                on_click=reset_inventory_filters,
-                use_container_width=True,
-            )
 
             # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
             #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
