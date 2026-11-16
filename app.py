@@ -2996,7 +2996,7 @@ with main_container:
                                     address_txt = "주소 미등록"
 
                                 # [핵심 수정] 복사될 텍스트의 첫 줄에 "반추 재고요청드립니다" 추가
-                                copy_text_lines = ["반추 재고요청드립니다", f"[{popup_title}]", f"📍 {address_txt}", ""]
+                                copy_text_lines = ["반추 재고요청드립니다", f"[{popup_title}]", f"📍 {address_txt}"]
                                 
                                 # --- [최적화] 루프 밖에서 미리 집계해둔 결과를 조회만 함 ---
                                 summary_g = _summary_map.get((lat, lon, name), _empty_summary)
@@ -3020,7 +3020,8 @@ with main_container:
                                     copy_text_lines.append(f"{r[real_model]} | {cn}")
                                     
                                 # 1. 기본 복사 텍스트 세팅
-                                copy_text = "\n".join(copy_text_lines) + "\n\n사용가능할까요?"
+                                from html import escape
+                                copy_text = "&#10;".join(escape(str(line), quote=False) for line in copy_text_lines) + "&#10;&#10;사용가능할까요?"
 
                                 # 2. HTML 팝업창 렌더링 (주석 제거 및 에러 완벽 방지)
                                 popup_html = f"""
