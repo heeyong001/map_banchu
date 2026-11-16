@@ -3020,7 +3020,7 @@ with main_container:
                                     copy_text_lines.append(f"{r[real_model]} | {cn}")
                                     
                                 # 1. 기본 복사 텍스트 세팅
-                                copy_text = "\\n".join(copy_text_lines) + "\\n\\n사용가능할까요?"
+                                copy_text = "\n".join(copy_text_lines) + "\n\n사용가능할까요?"
 
                                 # 2. HTML 팝업창 렌더링 (주석 제거 및 에러 완벽 방지)
                                 popup_html = f"""
