@@ -3038,7 +3038,7 @@ with main_container:
                                                 var finalTxt = base;
                                                 
                                                 if(memo !== '') {{
-                                                    finalTxt += nl + memo + ' 이동합니다.';
+                                                    finalTxt += nl + memo + ' 이동예정입니다.';
                                                 }} else {{
                                                     finalTxt += nl + '';
                                                 }}
