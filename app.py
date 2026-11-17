@@ -3071,7 +3071,7 @@ with main_container:
                                 contact_html = escape(contact_txt, quote=True)
 
                                 # [핵심 수정] 복사될 텍스트의 첫 줄에 "반추 재고요청드립니다" 추가
-                                copy_text_lines = ["반추 재고요청드립니다", "", f"[{popup_title}]", f"📍 {address_txt}", f"K노트 연락처 : {contact_txt}", ""]
+                                copy_text_lines = ["반추 재고요청드립니다", "", f"[{popup_title}]", f"📍 {address_txt}", f"☎ K노트 연락처 : {contact_txt}", ""]
                                 
                                 # --- [최적화] 루프 밖에서 미리 집계해둔 결과를 조회만 함 ---
                                 summary_g = _summary_map.get((lat, lon, name), _empty_summary)
@@ -3106,6 +3106,15 @@ with main_container:
                                         {popup_title}
                                         <textarea id='base_text_{uid}' style='display:none;'>{copy_text}</textarea>
                                         <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
+                                            const notify = (message, isError=false) => {{
+                                                const target = document.getElementById('copy_status_{uid}');
+                                                if (!target) return;
+                                                clearTimeout(target._feedbackTimer);
+                                                target.textContent = message;
+                                                target.style.color = isError ? '#b91c1c' : '#166534';
+                                                target.hidden = false;
+                                                target._feedbackTimer = setTimeout(() => {{ target.hidden = true; }}, isError ? 5000 : 2500);
+                                            }};
                                             try {{
                                                 var nl = String.fromCharCode(10);
                                                 var base = document.getElementById('base_text_{uid}').value;
@@ -3125,28 +3134,30 @@ with main_container:
                                                 document.body.removeChild(tempTa);
                                                 
                                                 if(success) {{
-                                                    alert('✅ 목록이 복사되었습니다!');
+                                                    notify('✅ 목록이 복사되었습니다!');
                                                 }} else {{
-                                                    alert('⚠️ 복사에 실패했습니다. 브라우저 설정을 확인해주세요.');
+                                                    notify('⚠️ 복사에 실패했습니다. 브라우저 설정을 확인해주세요.', true);
                                                 }}
                                             }} catch(err) {{
-                                                alert('에러 발생: ' + err);
+                                                notify('⚠️ 복사 중 오류가 발생했습니다. 다시 시도해주세요.', true);
                                             }}
                                         " title="내용 복사"></i>
                                     </div>
                                     
-                                    <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                    <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:3px; word-break:keep-all;'>
                                         📍 {address_txt}
                                     </div>
-                                    <div style='font-size:12px; color:#333; text-align:center; margin-bottom:8px; word-break:break-all;'>
-                                        K노트 연락처 : {contact_html}
+                                    <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
+                                        ☎ K노트 연락처 : {contact_html}
                                     </div>
 
                                     <div style='margin-bottom:8px; text-align:center;'>
-                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳만입력하세요, "이동합니다" 멘트와 함께 복사됩니다' 
+                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳을 입력하세요 · 이동예정입니다' 
                                                style='width:95%; padding:5px; font-size:11px; border:1px solid #aaa; border-radius:4px; box-sizing:border-box;'>
                                     </div>
                                     
+                                    <div id='copy_status_{uid}' role='status' aria-live='polite' hidden
+                                         style='font-family:inherit; font-size:11px; text-align:center; margin:0 0 8px;'></div>
                                     <div style='max-height: 150px; overflow-y: auto; border-bottom: 1px solid #eee;'>
                                         <table style='width:100%; border-collapse:collapse; font-size:11px;'>
                                             <thead>
