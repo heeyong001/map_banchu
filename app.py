@@ -1464,7 +1464,7 @@ with main_container:
                                 return None
 
                             def _norm_key(v):
-                                return str(v).strip().replace(" ", "").lower()
+                                return ''.join(str(v).strip().lower().split())
 
                             inside_map = {}   # 정규화된 애칭 -> (주소, x좌표, y좌표)
                             try:
@@ -1489,16 +1489,22 @@ with main_container:
                             boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
                             code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
                             
-                            if boyu_col and code_col:
+                            if boyu_col:
                                 # "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
                                 raw_filtered = raw_df[
                                     (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
                                     (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
                                 ].copy()
 
-                                # 중복 제거 (이름과 코드 조합 기준)
-                                raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col, code_col]).copy()
-                                db_df['접점코드'] = db_df['접점코드'].astype(str).str.strip()
+                                # 이름 매칭이므로 접점번호 유무와 무관하게 보유처별로 검사합니다.
+                                raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col]).copy()
+                                if len(db_df.columns) > 6 and str(db_df.columns[6]).strip() == '반추관설':
+                                    db_df = db_df.copy()
+                                    db_df['_반추관설_키'] = db_df.iloc[:, 6].fillna('').map(_norm_key)
+                                else:
+                                    db_df = db_df.iloc[0:0].copy()
+                                    db_df['_반추관설_키'] = pd.Series(dtype=str)
+                                    st.warning('stores G열 반추관설을 확인할 수 없습니다. inside 기준으로 검사합니다.')
 
                                 def _check_inside(row):
                                     """stores_inside 애칭 매칭 결과. 정상이면 'OK', 미등록이면 None"""
@@ -1517,39 +1523,27 @@ with main_container:
                                     return "OK"
 
                                 def get_unmatch_reason(row):
-                                    # 1순위 inside가 정상이면 접점번호 유무와 무관하게 매칭 완료입니다.
-                                    if _check_inside(row) == "OK":
+                                    # 1순위: inside의 거래처 애칭.
+                                    inside_result = _check_inside(row)
+                                    if inside_result == "OK":
                                         return None
-                                    # inside에서 찾지 못하거나 정보가 불완전한 경우 stores로 보완합니다.
-                                    code = str(row[code_col]).strip()
-
-                                    # 1) 엑셀에 접점번호가 없는 경우 → 애칭으로 재확인
-                                    if not code or code.lower() in ['nan', 'none', 'n/a', '']:
-                                        r = _check_inside(row)
-                                        if r == "OK": return None
-                                        if r: return r
-                                        return "❌ 엑셀 재고표에 접점번호가 없고, stores_inside 애칭에도 없습니다."
-
-                                    # 2) stores에 접점코드가 없는 경우 → 애칭으로 재확인
-                                    match = db_df[db_df['접점코드'] == code]
+                                    # 2순위: stores G열 반추관설과 재고 보유처 이름.
+                                    owner_key = _norm_key(row[boyu_col])
+                                    if owner_key in ('', 'nan', 'none', 'null', '<na>', '-'):
+                                        return "❌ 재고표의 보유처 이름이 비어 있습니다."
+                                    match = db_df[db_df['_반추관설_키'] == owner_key]
                                     if match.empty:
-                                        r = _check_inside(row)
-                                        if r == "OK": return None
-                                        if r: return r
-                                        return "❌ stores·stores_inside 어디에도 등록되지 않았습니다."
-
-                                    # 3) stores에는 있으나 주소/좌표가 빈 경우 → 애칭이 대신 채워주는지 확인
+                                        return inside_result or "❌ inside 애칭과 stores 반추관설 어디에도 이름이 없습니다."
                                     m_row = match.iloc[-1]
                                     addr = str(m_row.get('사업장주소', '')).strip()
                                     x_num = pd.to_numeric(m_row.get('x좌표'), errors='coerce')
                                     y_num = pd.to_numeric(m_row.get('y좌표'), errors='coerce')
-
                                     if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
-                                        return "📍 stores_inside와 stores에 사용할 주소가 없습니다."
+                                        return "📍 inside와 stores 반추관설에서 사용할 주소를 찾지 못했습니다."
                                     if not (pd.notna(x_num) and pd.notna(y_num)
                                             and -180 <= x_num <= 180 and -90 <= y_num <= 90
                                             and x_num != 0 and y_num != 0):
-                                        return "🌐 stores_inside와 stores에 사용할 좌표(위경도)가 없습니다."
+                                        return "🌐 inside와 stores 반추관설에 사용할 좌표(위경도)가 없습니다."
                                     return None
 
                                 raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
@@ -1562,7 +1556,7 @@ with main_container:
                                     st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
                                 else: 
                                     st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
-                            else: st.error("엑셀 파일에서 '보유처' 또는 '접점코드' 컬럼을 식별할 수 없습니다.")
+                            else: st.error("엑셀 파일에서 보유처 컬럼을 식별할 수 없습니다.")
                         except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
                 else: 
                     st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
@@ -1827,7 +1821,8 @@ with main_container:
                         # =========================================================
             # 2. 보유처명 정규화 (⚠️ 애칭 매칭 기준이므로 병합보다 먼저)
             # =========================================================
-            boyu_col = next((col for col in df.columns if '보유처' in str(col)), None)
+            boyu_col = (df.columns[13] if len(df.columns) > 13 and '보유처' in str(df.columns[13])
+                        else next((col for col in df.columns if '보유처' in str(col)), None))
             if boyu_col:
                 df[boyu_col] = df[boyu_col].astype(str).str.strip()
                 df.loc[df[boyu_col].str.contains("반추", na=False), boyu_col] = "반추정보통신"
@@ -1843,7 +1838,7 @@ with main_container:
                     return _df.columns[fallback_idx]
                 return None
 
-            df['주소출처'] = "미등록"   # 미등록 / 접점매칭 / 애칭매칭
+            df['주소출처'] = "미등록"   # 미등록 / 반추관설매칭 / 애칭매칭
 
             # =========================================================
             # 3. stores_inside를 먼저 읽고, stores는 미매칭 보완용으로 읽습니다.
@@ -1861,17 +1856,31 @@ with main_container:
                 addr_df = None
                 print(f"[stores 로드 실패] {e}")
 
-            target_code_col = next((col for col in df.columns if '접점번호' in str(col) or '접점코드' in str(col)), None)
-            if target_code_col and addr_df is not None and not addr_df.empty and '접점코드' in addr_df.columns:
-                df[target_code_col] = df[target_code_col].astype(str).str.strip()
-                addr_df = addr_df.copy()
-                addr_df['접점코드'] = addr_df['접점코드'].astype(str).str.strip()
-                addr_df = addr_df.drop_duplicates(subset=['접점코드'], keep='last')
-                df = pd.merge(df, addr_df, left_on=target_code_col, right_on='접점코드', how='left')
-
-                if '사업장주소' in df.columns:
-                    _ok = df['사업장주소'].notna() & (df['사업장주소'].astype(str).str.strip() != "")
-                    df.loc[_ok, '주소출처'] = "접점매칭"
+            # stores는 G열 반추관설과 재고표 N열 보유처의 이름으로만 매칭합니다.
+            # 아래 inside 우선 선택에서 필요한 경우에만 이 주소·좌표가 사용됩니다.
+            # 원본 접점코드는 재고 데이터로 보존하며 조회 키로 사용하지 않습니다.
+            if boyu_col and addr_df is not None and not addr_df.empty:
+                if len(addr_df.columns) > 6 and str(addr_df.columns[6]).strip() == '반추관설':
+                    addr_df = addr_df.copy()
+                    addr_df['_stores_name_key'] = (addr_df.iloc[:, 6].fillna('').astype(str).str.strip()
+                                                   .str.replace(r"\s+", "", regex=True).str.lower())
+                    addr_df = addr_df[~addr_df['_stores_name_key'].isin(
+                        ['', 'nan', 'none', 'null', '<na>', '-']
+                    )].drop_duplicates('_stores_name_key', keep='last')
+                    # 재고표에 이미 있는 접점코드 등의 열은 중복 병합하지 않습니다.
+                    payload = addr_df.drop(columns=[
+                        c for c in addr_df.columns if c in df.columns and c != '_stores_name_key'
+                    ])
+                    df = pd.merge(df, payload, left_on='_보유처_키',
+                                  right_on='_stores_name_key', how='left', validate='many_to_one')
+                    df = df.drop(columns=['_stores_name_key'], errors='ignore')
+                    if '사업장주소' in df.columns:
+                        _ok = df['사업장주소'].notna() & ~df['사업장주소'].astype(str).str.strip().str.lower().isin(
+                            ['', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록']
+                        )
+                        df.loc[_ok, '주소출처'] = "반추관설매칭"
+                else:
+                    print('[stores] G열 반추관설을 확인할 수 없어 stores 이름 매칭을 건너뜁니다.')
 
             # 이후 로직이 참조하는 표준 컬럼이 없으면 빈 칸으로 생성
             for _c in ['사업장주소', 'x좌표', 'y좌표']:
