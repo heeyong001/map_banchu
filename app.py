@@ -345,7 +345,7 @@ def render_recovery_bridge():
 
 
 def normalize_owner_match_key(value):
-    """비교할 때만 ㅌ/ㅌㅌ + 숫자 + 하이픈 머릿말을 무시합니다."""
+    """비교할 때만 이름 맨 앞의 자음형 유형 머릿말을 무시합니다."""
     import re
 
     if value is None or pd.isna(value):
@@ -353,9 +353,10 @@ def normalize_owner_match_key(value):
     key = re.sub(r"\s+", "", str(value).strip()).lower()
     if key in {"", "nan", "none", "null", "<na>", "-"}:
         return ""
-    # 예: ㅌㅌ03-서남-... / ㅌ01 - 서남-... -> 서남-...
-    # 지역명이나 일반 매장명으로 시작하는 부분은 제거하지 않습니다.
-    return re.sub(r"^(?:ㅌ{1,2}[0-9]+-)+", "", key)
+    # ㅌ01-, ㅌㅌ03-, ㅊ-, ㅊ인천-, ㅌ58인천- 등:
+    # 선두 자음형 코드 + 선택적 숫자 + 선택적 하이픈만 비교 키에서 제거합니다.
+    # ^로 시작 위치를 제한해 지역명·매장명 중간의 내용은 보존합니다.
+    return re.sub(r"^(?:[ㄱ-ㅎ]+[0-9]*-?)+", "", key)
 
 
 def format_knote_contact(value):
