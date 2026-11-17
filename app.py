@@ -344,6 +344,50 @@ def render_recovery_bridge():
 
 
 
+def format_knote_contact(value):
+    """누락된 첫 0을 보완하고 연락처 종류에 맞춰 하이픈을 넣습니다."""
+    import re
+    from decimal import Decimal, InvalidOperation
+
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if text.casefold() in {"", "nan", "none", "null", "<na>", "-"}:
+        return ""
+    # 숫자로 읽힌 시트 값의 .0 및 지수 표기를 복원합니다.
+    if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", text):
+        try:
+            number = Decimal(text)
+            if number != number.to_integral_value():
+                return ""
+            text = format(number, "f").split(".")[0]
+        except InvalidOperation:
+            return ""
+    # 전화번호의 기존 공백, 괄호, 하이픈은 제거 후 다시 배치합니다.
+    if not re.fullmatch(r"[0-9\s()\-]+", text):
+        return text  # 내선/메모 등이 있으면 숫자만 합쳐 잘못된 번호를 만들지 않습니다.
+    digits = re.sub(r"[^0-9]", "", text)
+    if not digits:
+        return ""
+    if not digits.startswith("0"):
+        digits = "0" + digits
+
+    if digits.startswith(("010", "070")):
+        if len(digits) == 11:
+            return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+        return digits  # 자릿수가 맞지 않으면 숫자를 추가하거나 버리지 않습니다.
+
+    area_codes = {
+        "031", "032", "033", "041", "042", "043", "044",
+        "051", "052", "053", "054", "055", "061", "062", "063", "064",
+    }
+    if digits.startswith("02") and len(digits) in (9, 10):
+        return f"02-{digits[2:-4]}-{digits[-4:]}"
+    if digits[:3] in area_codes and len(digits) in (10, 11):
+        return f"{digits[:3]}-{digits[3:-4]}-{digits[-4:]}"
+    return digits
+
+
 def reset_inventory_filters():
     state = st.session_state
     for name, suffix in {
@@ -1826,6 +1870,25 @@ with main_container:
                 inside_df = None
                 print(f"[stores_inside 로드 실패] {e}")
 
+            # K노트 연락처: 주소 매칭 성공 여부와 별개로 모든 보유처에 연결합니다.
+            df['K노트 연락처'] = "미확인"
+            if boyu_col and inside_df is not None and not inside_df.empty:
+                contact_nick_col = _pick_col(inside_df, ['애칭', '거래처'], 1)
+                # N열은 헤더 이름과 무관하게 14번째 열입니다.
+                if contact_nick_col is not None and len(inside_df.columns) >= 14:
+                    contact_keys = (inside_df[contact_nick_col].astype(str).str.strip()
+                                    .str.replace(r"\s+", "", regex=True).str.lower())
+                    contact_values = inside_df.iloc[:, 13].map(format_knote_contact)
+                    contact_rows = pd.DataFrame({"key": contact_keys, "contact": contact_values})
+                    contact_rows = contact_rows[
+                        ~contact_rows['key'].isin(['', 'nan', 'none', '<na>'])
+                        & contact_rows['contact'].ne('')
+                    ].drop_duplicates('key', keep='last')
+                    contact_map = dict(zip(contact_rows['key'], contact_rows['contact']))
+                    df['K노트 연락처'] = df['_보유처_키'].map(contact_map).fillna('미등록')
+                else:
+                    print('[K노트 연락처] stores_inside의 애칭 열 또는 N열을 확인할 수 없습니다.')
+
             if boyu_col and inside_df is not None and not inside_df.empty:
                 nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
                 addr_c = _pick_col(inside_df, ['주소'], 15)
@@ -2995,8 +3058,20 @@ with main_container:
                                 else:
                                     address_txt = "주소 미등록"
 
+                                from html import escape
+                                # 팝업과 복사 문구에 동일한 K노트 연락처를 표시합니다.
+                                contact_values = g.get('K노트 연락처', pd.Series(dtype=str))
+                                contacts = list(dict.fromkeys(
+                                    str(value).strip() for value in contact_values.dropna()
+                                    if str(value).strip() not in ('', '미등록', '미확인')
+                                ))
+                                contact_txt = ' / '.join(contacts) if contacts else (
+                                    '미확인' if '미확인' in contact_values.astype(str).tolist() else '미등록'
+                                )
+                                contact_html = escape(contact_txt, quote=True)
+
                                 # [핵심 수정] 복사될 텍스트의 첫 줄에 "반추 재고요청드립니다" 추가
-                                copy_text_lines = ["반추 재고요청드립니다", f"[{popup_title}]", f"📍 {address_txt}"]
+                                copy_text_lines = ["반추 재고요청드립니다", "", f"[{popup_title}]", f"📍 {address_txt}", f"K노트 연락처 : {contact_txt}", ""]
                                 
                                 # --- [최적화] 루프 밖에서 미리 집계해둔 결과를 조회만 함 ---
                                 summary_g = _summary_map.get((lat, lon, name), _empty_summary)
@@ -3039,8 +3114,6 @@ with main_container:
                                                 
                                                 if(memo !== '') {{
                                                     finalTxt += nl + memo + ' 이동예정입니다.';
-                                                }} else {{
-                                                    finalTxt += nl + '';
                                                 }}
                                                 
                                                 var tempTa = document.createElement('textarea');
@@ -3064,6 +3137,9 @@ with main_container:
                                     
                                     <div style='font-size:11px; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         📍 {address_txt}
+                                    </div>
+                                    <div style='font-size:12px; color:#333; text-align:center; margin-bottom:8px; word-break:break-all;'>
+                                        K노트 연락처 : {contact_html}
                                     </div>
 
                                     <div style='margin-bottom:8px; text-align:center;'>
