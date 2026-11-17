@@ -1466,20 +1466,22 @@ with main_container:
                             def _norm_key(v):
                                 return str(v).strip().replace(" ", "").lower()
 
-                            inside_map = {}   # 정규화된 애칭 -> (주소, x좌표)
+                            inside_map = {}   # 정규화된 애칭 -> (주소, x좌표, y좌표)
                             try:
                                 inside_df = load_sheet("stores_inside", ttl="10m")
                                 if inside_df is not None and not inside_df.empty:
                                     nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
                                     addr_c = _pick_col(inside_df, ['주소'], 15)
                                     x_c    = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
-                                    if all([nick_c, addr_c, x_c]):
+                                    y_c    = _pick_col(inside_df, ['y좌표', 'Y좌표', '위도'], 18)
+                                    if all([nick_c, addr_c, x_c, y_c]):
                                         for _, _r in inside_df.iterrows():
                                             _k = _norm_key(_r[nick_c])
                                             if _k and _k != 'nan':
                                                 inside_map[_k] = (
                                                     str(_r[addr_c]).strip(),
                                                     str(_r[x_c]).strip().lower(),
+                                                    str(_r[y_c]).strip().lower(),
                                                 )
                             except Exception as _e:
                                 st.info(f"ℹ️ stores_inside 시트를 읽지 못했습니다. stores 기준으로만 판정합니다. ({_e})")
@@ -1503,14 +1505,22 @@ with main_container:
                                     info = inside_map.get(_norm_key(row[boyu_col]))
                                     if info is None:
                                         return None
-                                    addr, x_val = info
-                                    if not addr or addr == 'nan':
+                                    addr, x_val, y_val = info
+                                    if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
                                         return "📍 stores_inside에 애칭은 있으나 주소(P열)가 비어 있습니다."
-                                    if not x_val or x_val in ('nan', 'none'):
-                                        return "🌐 stores_inside에 주소는 있으나 좌표(R/S열)가 비어 있습니다."
+                                    x_num = pd.to_numeric(x_val, errors='coerce')
+                                    y_num = pd.to_numeric(y_val, errors='coerce')
+                                    if not (pd.notna(x_num) and pd.notna(y_num)
+                                            and -180 <= x_num <= 180 and -90 <= y_num <= 90
+                                            and x_num != 0 and y_num != 0):
+                                        return "🌐 stores_inside에 주소는 있으나 좌표(R/S열)가 비어 있거나 올바르지 않습니다."
                                     return "OK"
 
                                 def get_unmatch_reason(row):
+                                    # 1순위 inside가 정상이면 접점번호 유무와 무관하게 매칭 완료입니다.
+                                    if _check_inside(row) == "OK":
+                                        return None
+                                    # inside에서 찾지 못하거나 정보가 불완전한 경우 stores로 보완합니다.
                                     code = str(row[code_col]).strip()
 
                                     # 1) 엑셀에 접점번호가 없는 경우 → 애칭으로 재확인
@@ -1529,16 +1539,17 @@ with main_container:
                                         return "❌ stores·stores_inside 어디에도 등록되지 않았습니다."
 
                                     # 3) stores에는 있으나 주소/좌표가 빈 경우 → 애칭이 대신 채워주는지 확인
-                                    m_row = match.iloc[0]
+                                    m_row = match.iloc[-1]
                                     addr = str(m_row.get('사업장주소', '')).strip()
-                                    x_val = str(m_row.get('x좌표', '')).strip().lower()
+                                    x_num = pd.to_numeric(m_row.get('x좌표'), errors='coerce')
+                                    y_num = pd.to_numeric(m_row.get('y좌표'), errors='coerce')
 
-                                    if not addr or addr == 'nan':
-                                        if _check_inside(row) == "OK": return None
-                                        return "📍 stores에 등록은 되어있으나 주소 정보가 누락되었습니다."
-                                    if not x_val or x_val in ('nan', 'none'):
-                                        if _check_inside(row) == "OK": return None
-                                        return "🌐 주소는 있으나 좌표(위경도) 생성에 실패한 매장입니다."
+                                    if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
+                                        return "📍 stores_inside와 stores에 사용할 주소가 없습니다."
+                                    if not (pd.notna(x_num) and pd.notna(y_num)
+                                            and -180 <= x_num <= 180 and -90 <= y_num <= 90
+                                            and x_num != 0 and y_num != 0):
+                                        return "🌐 stores_inside와 stores에 사용할 좌표(위경도)가 없습니다."
                                     return None
 
                                 raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
@@ -1835,8 +1846,15 @@ with main_container:
             df['주소출처'] = "미등록"   # 미등록 / 접점매칭 / 애칭매칭
 
             # =========================================================
-            # 3. [1차] stores 시트 — 접점번호 기준
+            # 3. stores_inside를 먼저 읽고, stores는 미매칭 보완용으로 읽습니다.
+            # stores의 다른 메타데이터도 유지하되 최종 주소·좌표는 아래에서 inside를 우선합니다.
             # =========================================================
+            try:
+                inside_df = load_sheet("stores_inside", ttl="10m")
+            except Exception as e:
+                inside_df = None
+                print(f"[stores_inside 로드 실패] {e}")
+
             try:
                 addr_df = load_sheet("stores", ttl="10m")
             except Exception as e:
@@ -1861,15 +1879,9 @@ with main_container:
                     df[_c] = pd.NA
 
             # =========================================================
-            # 4. [2차] stores_inside 시트 — 거래처 애칭 기준 (1차 미매칭 건만)
+            # 4. [최우선] stores_inside 시트 — 거래처 애칭 기준
             #    B열=애칭 / P열=주소 / R열=x좌표 / S열=y좌표
             # =========================================================
-            try:
-                inside_df = load_sheet("stores_inside", ttl="10m")
-            except Exception as e:
-                inside_df = None
-                print(f"[stores_inside 로드 실패] {e}")
-
             # K노트 연락처: 주소 매칭 성공 여부와 별개로 모든 보유처에 연결합니다.
             df['K노트 연락처'] = "미확인"
             if boyu_col and inside_df is not None and not inside_df.empty:
@@ -1908,15 +1920,37 @@ with main_container:
                     df = pd.merge(df, ins.drop(columns=['_ins_애칭']),
                                   left_on='_보유처_키', right_on='_ins_키', how='left')
 
-                    # 1차에서 주소를 못 채운 행 && 애칭이 매칭된 행만 덮어쓰기
-                    need = (df['사업장주소'].isna() | (df['사업장주소'].astype(str).str.strip() == "")) \
-                           & df['_ins_주소'].notna() \
-                           & (df['_ins_주소'].astype(str).str.strip() != "")
+                    # inside의 주소·좌표를 최우선으로 선택합니다.
+                    # 서로 다른 매장의 주소와 좌표를 섞지 않도록 한 묶음으로 교체합니다.
+                    def _valid_address(values):
+                        return values.notna() & ~values.astype(str).str.strip().str.lower().isin(
+                            ['', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록']
+                        )
+
+                    def _valid_xy(xs, ys):
+                        x_num = pd.to_numeric(xs, errors='coerce')
+                        y_num = pd.to_numeric(ys, errors='coerce')
+                        return (x_num.between(-180, 180) & y_num.between(-90, 90)
+                                & x_num.ne(0) & y_num.ne(0))
+
+                    inside_address_ok = _valid_address(df['_ins_주소'])
+                    inside_complete = inside_address_ok & _valid_xy(df['_ins_x'], df['_ins_y'])
+                    stores_complete = (_valid_address(df['사업장주소'])
+                                       & _valid_xy(df['x좌표'], df['y좌표']))
+                    # inside가 완전하면 무조건 우선. 불완전하면 정상 stores로 보완합니다.
+                    # 양쪽 모두 불완전한 경우에도 inside의 유효한 주소는 보존합니다.
+                    need = inside_address_ok & (inside_complete | ~stores_complete)
 
                     df.loc[need, '사업장주소'] = df.loc[need, '_ins_주소']
-                    df.loc[need, 'x좌표']     = df.loc[need, '_ins_x']
-                    df.loc[need, 'y좌표']     = df.loc[need, '_ins_y']
-                    df.loc[need, '주소출처']   = "애칭매칭"
+                    inside_x = pd.to_numeric(df['_ins_x'], errors='coerce')
+                    inside_y = pd.to_numeric(df['_ins_y'], errors='coerce')
+                    inside_xy_ok = _valid_xy(df['_ins_x'], df['_ins_y'])
+                    # 문자열 좌표 열에도 안전하게 숫자 좌표를 대입할 수 있도록 통일합니다.
+                    df['x좌표'] = pd.to_numeric(df['x좌표'], errors='coerce')
+                    df['y좌표'] = pd.to_numeric(df['y좌표'], errors='coerce')
+                    df.loc[need, 'x좌표'] = inside_x.where(inside_xy_ok).loc[need]
+                    df.loc[need, 'y좌표'] = inside_y.where(inside_xy_ok).loc[need]
+                    df.loc[need, '주소출처'] = "애칭매칭"
 
                     df = df.drop(columns=['_ins_주소', '_ins_x', '_ins_y', '_ins_키'], errors='ignore')
                 else:
