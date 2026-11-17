@@ -344,6 +344,20 @@ def render_recovery_bridge():
 
 
 
+def normalize_owner_match_key(value):
+    """비교할 때만 ㅌ/ㅌㅌ + 숫자 + 하이픈 머릿말을 무시합니다."""
+    import re
+
+    if value is None or pd.isna(value):
+        return ""
+    key = re.sub(r"\s+", "", str(value).strip()).lower()
+    if key in {"", "nan", "none", "null", "<na>", "-"}:
+        return ""
+    # 예: ㅌㅌ03-서남-... / ㅌ01 - 서남-... -> 서남-...
+    # 지역명이나 일반 매장명으로 시작하는 부분은 제거하지 않습니다.
+    return re.sub(r"^(?:ㅌ{1,2}[0-9]+-)+", "", key)
+
+
 def format_knote_contact(value):
     """누락된 첫 0을 보완하고 연락처 종류에 맞춰 하이픈을 넣습니다."""
     import re
@@ -1464,7 +1478,7 @@ with main_container:
                                 return None
 
                             def _norm_key(v):
-                                return ''.join(str(v).strip().lower().split())
+                                return normalize_owner_match_key(v)
 
                             inside_map = {}   # 정규화된 애칭 -> (주소, x좌표, y좌표)
                             try:
@@ -1827,7 +1841,7 @@ with main_container:
                 df[boyu_col] = df[boyu_col].astype(str).str.strip()
                 df.loc[df[boyu_col].str.contains("반추", na=False), boyu_col] = "반추정보통신"
                 # 애칭 대조용 키 (공백 제거 + 소문자)
-                df['_보유처_키'] = df[boyu_col].str.replace(r"\s+", "", regex=True).str.lower()
+                df['_보유처_키'] = df[boyu_col].map(normalize_owner_match_key)
 
             # 헤더 이름으로 먼저 찾고, 못 찾으면 지정한 열 위치로 대체
             def _pick_col(_df, keywords, fallback_idx):
@@ -1862,8 +1876,7 @@ with main_container:
             if boyu_col and addr_df is not None and not addr_df.empty:
                 if len(addr_df.columns) > 6 and str(addr_df.columns[6]).strip() == '반추관설':
                     addr_df = addr_df.copy()
-                    addr_df['_stores_name_key'] = (addr_df.iloc[:, 6].fillna('').astype(str).str.strip()
-                                                   .str.replace(r"\s+", "", regex=True).str.lower())
+                    addr_df['_stores_name_key'] = addr_df.iloc[:, 6].map(normalize_owner_match_key)
                     addr_df = addr_df[~addr_df['_stores_name_key'].isin(
                         ['', 'nan', 'none', 'null', '<na>', '-']
                     )].drop_duplicates('_stores_name_key', keep='last')
@@ -1897,8 +1910,7 @@ with main_container:
                 contact_nick_col = _pick_col(inside_df, ['애칭', '거래처'], 1)
                 # N열은 헤더 이름과 무관하게 14번째 열입니다.
                 if contact_nick_col is not None and len(inside_df.columns) >= 14:
-                    contact_keys = (inside_df[contact_nick_col].astype(str).str.strip()
-                                    .str.replace(r"\s+", "", regex=True).str.lower())
+                    contact_keys = inside_df[contact_nick_col].map(normalize_owner_match_key)
                     contact_values = inside_df.iloc[:, 13].map(format_knote_contact)
                     contact_rows = pd.DataFrame({"key": contact_keys, "contact": contact_values})
                     contact_rows = contact_rows[
@@ -1921,8 +1933,7 @@ with main_container:
                     ins = inside_df[[nick_c, addr_c, x_c, y_c]].copy()
                     # 이름 충돌(_x/_y 접미사) 방지를 위해 전용 이름으로 변경
                     ins.columns = ['_ins_애칭', '_ins_주소', '_ins_x', '_ins_y']
-                    ins['_ins_키'] = (ins['_ins_애칭'].astype(str).str.strip()
-                                        .str.replace(r"\s+", "", regex=True).str.lower())
+                    ins['_ins_키'] = ins['_ins_애칭'].map(normalize_owner_match_key)
                     ins = ins[ins['_ins_키'] != ""]
                     ins = ins.drop_duplicates(subset=['_ins_키'], keep='last')
 
