@@ -359,6 +359,147 @@ def normalize_owner_match_key(value):
     return re.sub(r"^(?:[ㄱ-ㅎ]+[0-9]*-?)+", "", key)
 
 
+def build_store_location_hints(address_coordinate_rows):
+    """DB의 정상 주소·좌표에서 지역별 대표 좌표를 만듭니다. 외부 API는 호출하지 않습니다."""
+    import re
+    import math
+    from statistics import median
+    from collections import defaultdict
+
+    samples = defaultdict(list)
+    token_pattern = re.compile(
+        r'(?<![가-힣0-9])([가-힣][가-힣0-9.·]*?(?:특별자치시|특별시|광역시|시|군|구|읍|면|동|리))(?=\s|[(),]|$)'
+    )
+    metro_names = ('서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종')
+
+    def add(parts, label, level, lat, lon):
+        parts = tuple(dict.fromkeys(part for part in parts if len(part) >= 2))
+        if parts:
+            samples[(parts, label, level)].append((lat, lon))
+
+    for address, x, y in address_coordinate_rows:
+        try:
+            lat, lon = float(y), float(x)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90
+                and -180 <= lon <= 180 and lat != 0 and lon != 0):
+            continue
+        text = str(address).strip()
+        if text.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '주소 미등록', '미등록'):
+            continue
+        tokens = token_pattern.findall(text)
+        city = ''
+        for token in tokens:
+            if token.endswith(('특별자치시', '특별시', '광역시')):
+                city = re.sub(r'(특별자치시|특별시|광역시)$', '', token)
+                break
+            if token.endswith(('시', '군')):
+                city = token[:-1]
+                break
+        if not city:
+            city = next((name for name in metro_names if text.startswith(name + ' ')), '')
+        if not city:
+            continue
+        add((city,), city, 2, lat, lon)
+        districts = [token[:-1] for token in tokens if token.endswith('구') and len(token) >= 3]
+        for district in districts:
+            add((city, district), city + ' ' + district, 3, lat, lon)
+        for token in tokens:
+            if not token.endswith(('읍', '면', '동', '리')):
+                continue
+            local = token[:-1]
+            aliases = {local, re.sub(r'[0-9.·]+$', '', local)}
+            if local.endswith('본'):
+                aliases.add(local[:-1])
+            for alias in aliases:
+                if len(alias) < 2:
+                    continue
+                add((city, alias), city + ' ' + alias, 5, lat, lon)
+                for district in districts:
+                    add((city, district, alias), city + ' ' + district + ' ' + alias, 6, lat, lon)
+                    add((district, alias), city + ' ' + district + ' ' + alias, 4, lat, lon)
+                # 단독 동 이름은 여러 지역에서 쓰이면 아래에서 제외합니다.
+                add((alias,), city + ' ' + alias, 1, lat, lon)
+
+    hints = []
+    for (parts, label, level), coords in samples.items():
+        unique = list(set(coords))
+        lat = median(point[0] for point in unique)
+        lon = median(point[1] for point in unique)
+        # 같은 이름이 멀리 떨어진 곳에서 쓰이면 단일 위치로 단정하지 않습니다.
+        distances = [math.hypot((point[0]-lat)*111, (point[1]-lon)*88) for point in unique]
+        limit = 90 if level == 2 else 30 if level == 3 else 12
+        if max(distances, default=0) > limit:
+            continue
+        hints.append((parts, label, lat, lon, level))
+    single_labels = defaultdict(set)
+    for parts, label, _, _, level in hints:
+        if level in (1, 4):
+            single_labels[parts].add(label)
+    return [hint for hint in hints if hint[4] not in (1, 4) or len(single_labels[hint[0]]) == 1]
+
+
+def infer_store_location(owner, db_hints, neighborhoods, districts, region_centers):
+    """구체적인 지명 조합 > 시·구 > 고유 동명 > 넓은 권역 순서로 추정합니다."""
+    import re
+    text = normalize_owner_match_key(owner)
+    candidates = []
+
+    # 기존 좌표 사전의 동 이름에 도시 문맥을 붙여 동명이인을 줄입니다.
+    parent_areas = {
+        '용인': ('죽전',), '성남': ('판교', '야탑'),
+        '고양': ('신원', '화정', '성사', '삼송', '원흥', '장항'),
+        '시흥': ('배곧', '정왕', '은행'), '부천': ('상동', '중동', '소사'),
+        '김포': ('풍무', '사우', '구래'), '광명': ('철산', '하안'),
+        '수원': ('우만',), '화성': ('동탄', '병점', '봉담', '향남'),
+        '평택': ('장당', '송탄', '안중', '팽성'), '안성': ('공도',),
+        '하남': ('미사',), '광주': ('경안', '태전'), '여주': ('홍문',),
+        '의정부': ('민락',), '동두천': ('지행',), '양주': ('옥정', '덕정'),
+        '남양주': ('다산', '별내', '호평'), '양평': ('양수',),
+        '파주': ('운정', '문산', '광탄', '봉일'), '연천': ('전곡',),
+        '인제': ('원통',), '인천': ('송도', '청라', '구월', '주안', '검단'),
+    }
+
+    def offer(parts, label, lat, lon, level):
+        if parts and all(part.lower() in text for part in parts):
+            # 긴 지명과 더 구체적인 조합을 우선합니다. 이름의 앞쪽 권역에 끌려가지 않습니다.
+            candidates.append(((level, sum(map(len, parts)), len(parts)), label, lat, lon))
+
+    for parts, label, lat, lon, level in db_hints:
+        offer(parts, label, lat, lon, level)
+    for city, locals_ in parent_areas.items():
+        for local in locals_:
+            if local in neighborhoods:
+                lat, lon = neighborhoods[local]
+                offer((city, local), city + ' ' + local, lat, lon, 5)
+    # 명확한 시설 이름만 우선합니다. '테크노' 같은 일반 상호 조각은 시설로 단정하지 않습니다.
+    for facility in ('반추정보통신', '반추', '신도림TM', '강변TM'):
+        if facility in neighborhoods:
+            lat, lon = neighborhoods[facility]
+            offer((facility,), facility, lat, lon, 7)
+
+    # 기존 시·구 사전도 활용하되 '중구' 등 중복 지명은 단독으로 쓰지 않습니다.
+    ambiguous_districts = {'중구', '강서', '동구', '서구', '남구', '북구', '중원', '수정', '장안', '동안', '만안'}
+    for city, (lat, lon) in districts.items():
+        if city not in ambiguous_districts:
+            offer((city,), city, lat, lon, 2)
+    # 정해진 권역명 자체와 '인천'이 넓은 단서인 경우는 구체적 동명보다 뒤로 미룹니다.
+    specific = [candidate for candidate in candidates if candidate[0][0] >= 3]
+    city_hits = [candidate for candidate in candidates if candidate[0][0] == 2 and candidate[1] not in region_centers]
+    local_hits = [candidate for candidate in candidates if candidate[0][0] == 1]
+    pool = specific or city_hits or local_hits or candidates
+    if pool:
+        _, label, lat, lon = max(pool, key=lambda item: item[0])
+        return lat, lon, label
+    # 마지막에만 넓은 권역 중심을 사용합니다.
+    for region, (lat, lon) in region_centers.items():
+        if region in text:
+            return lat, lon, region + ' 권역'
+    # 단서가 전혀 없으면 임의의 서울 위치를 만들지 않습니다. 목록에는 남습니다.
+    return None, None, ''
+
+
 def format_knote_contact(value):
     """누락된 첫 0을 보완하고 연락처 종류에 맞춰 하이픈을 넣습니다."""
     import re
@@ -1052,6 +1193,8 @@ def get_cached_search_results(df, models, colors, owners, daes, sos, real_model,
         
     temp_df = temp_df.sort_values(by=real_boyu, ascending=True)
     map_filtered_df = temp_df[~temp_df[real_boyu].astype(str).str.startswith('도매-', na=False)]
+    # 지역 단서가 없는 보유처를 임의의 서울 좌표에 표시하지 않습니다. 재고 목록에는 유지합니다.
+    map_filtered_df = map_filtered_df.dropna(subset=['cached_lat', 'cached_lon'])
     return temp_df, map_filtered_df
 
 ## ==============================================================================
@@ -2092,16 +2235,40 @@ with main_container:
                     "강원": (37.8813, 127.7298)  # 춘천시청 부근
                 }
 
-                # 지도에 뿌려줄 좌표 연결 (Jittering 미세 분산 처리)
+                # DB 주소의 시·구·동별 좌표를 지역 추정용으로만 집계합니다.
+                _hint_rows = []
+                if addr_df is not None and not addr_df.empty:
+                    if all(column in addr_df.columns for column in ('사업장주소', 'x좌표', 'y좌표')):
+                        _hint_rows.extend(addr_df[['사업장주소', 'x좌표', 'y좌표']].itertuples(index=False, name=None))
+                if inside_df is not None and not inside_df.empty:
+                    _addr = _pick_col(inside_df, ['주소'], 15)
+                    _x = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
+                    _y = _pick_col(inside_df, ['y좌표', 'Y좌표', '위도'], 18)
+                    if all(column is not None for column in (_addr, _x, _y)):
+                        _hint_rows.extend(inside_df[[_addr, _x, _y]].itertuples(index=False, name=None))
+                _location_hints = build_store_location_hints(_hint_rows)
+
                 def _calc_coord(row):
-                    y, x = row.get('y좌표'), row.get('x좌표')
+                    import math
                     boyu = str(row[boyu_col])
-                    if pd.notna(y) and pd.notna(x) and str(y).strip() != "" and str(x).lower() != "nan":
-                        return get_coordinate_smart_jitter(boyu, float(y), float(x))
-                    for region, coords in REGION_CENTER_COORDS.items():
-                        if region in boyu:
-                            return get_coordinate_smart_jitter(boyu, coords[0], coords[1])
-                    return get_coordinate_priority(boyu, 37.5665, 126.9780)
+                    try:
+                        lat, lon = float(row.get('y좌표')), float(row.get('x좌표'))
+                    except (TypeError, ValueError):
+                        lat = lon = float('nan')
+                    if (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90
+                            and -180 <= lon <= 180 and lat != 0 and lon != 0):
+                        lat, lon = get_coordinate_smart_jitter(boyu, lat, lon)
+                        return lat, lon, 'DB좌표', ''
+                    if '반추' in boyu:
+                        lat, lon = NEIGHBORHOOD_COORDS['반추정보통신']
+                        return lat, lon, '사무실고정좌표', ''
+                    lat, lon, label = infer_store_location(
+                        boyu, _location_hints, NEIGHBORHOOD_COORDS, DISTRICT_CENTERS, REGION_CENTER_COORDS
+                    )
+                    if lat is None or lon is None:
+                        return float('nan'), float('nan'), '추정불가', ''
+                    lat, lon = get_coordinate_smart_jitter(boyu, lat, lon)
+                    return lat, lon, '지역추정', label
 
                 # 🚀 [최적화 ⓑ] 좌표는 (보유처명 + x/y좌표)에만 의존하므로 고유 조합만 계산
                 _key_cols = [boyu_col] + [c for c in ['y좌표', 'x좌표'] if c in df.columns]
@@ -2114,9 +2281,13 @@ with main_container:
                 _res = _uniq.apply(_calc_coord, axis=1)
                 _uniq['cached_lat'] = _res.apply(lambda c: c[0])
                 _uniq['cached_lon'] = _res.apply(lambda c: c[1])
+                _uniq['위치표시방식'] = _res.apply(lambda c: c[2])
+                _uniq['추정지역'] = _res.apply(lambda c: c[3])
 
                 df['cached_lat'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['cached_lat'])))
                 df['cached_lon'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['cached_lon'])))
+                df['위치표시방식'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['위치표시방식'])))
+                df['추정지역'] = df['_좌표키'].map(dict(zip(_uniq['_좌표키'], _uniq['추정지역'])))
                 df = df.drop(columns=['_좌표키'], errors='ignore')
                 
                 # 집단구분이 있다면 대분류에 편입 (UI 필터 연동용)
@@ -3103,7 +3274,7 @@ with main_container:
                                 )
                                 popup_title = f"{name}" + (" · 주소 미등록" if missing_address else "")
                                 if missing_address:
-                                    border_style += " border: 2px dashed #F59E0B;"
+                                    border_style += " border: 2px dashed #EF4444;"
                                 
                                 address_txt = ""
                                 if is_office:
@@ -3114,6 +3285,16 @@ with main_container:
                                     address_txt = "주소 미등록"
 
                                 from html import escape
+                                guessed_regions = list(dict.fromkeys(
+                                    str(value).strip() for value in g.get('추정지역', pd.Series(dtype=str)).dropna()
+                                    if str(value).strip()
+                                ))
+                                location_hint_html = (
+                                    '<br><span style="color:#b91c1c;font-size:11px;">추정 위치: '
+                                    + escape(' / '.join(guessed_regions), quote=True)
+                                    + ' 인근 · 실제 매장 위치가 아닙니다.</span>'
+                                    if guessed_regions else ''
+                                )
                                 # 팝업과 복사 문구에 동일한 K노트 연락처를 표시합니다.
                                 contact_values = g.get('K노트 연락처', pd.Series(dtype=str))
                                 contacts = list(dict.fromkeys(
@@ -3200,7 +3381,7 @@ with main_container:
                                     </div>
                                     
                                     <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:3px; word-break:keep-all;'>
-                                        📍 {address_txt}
+                                        📍 {address_txt}{location_hint_html}
                                     </div>
                                     <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         ☎ K노트 연락처 : {contact_html}
@@ -3334,6 +3515,10 @@ with main_container:
                                 is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
                                 prefix = "✅ " if is_selected else ""
                                 address_badge = " · 주소 미등록" if is_address_missing(row.get('사업장주소'), nm) else ""
+                                if row.get('위치표시방식') == '지역추정':
+                                    address_badge += f" · {row.get('추정지역', '')} 인근 추정"
+                                elif row.get('위치표시방식') == '추정불가':
+                                    address_badge += " · 위치 추정 불가"
                                 button_label = f"{prefix}{nm}{address_badge}  :  {det}"
                                 
                                 if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
