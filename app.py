@@ -3289,12 +3289,11 @@ with main_container:
                                     str(value).strip() for value in g.get('추정지역', pd.Series(dtype=str)).dropna()
                                     if str(value).strip()
                                 ))
-                                location_hint_html = (
-                                    '<br><span style="color:#b91c1c;font-size:11px;">추정 위치: '
-                                    + escape(' / '.join(guessed_regions), quote=True)
-                                    + ' 인근 · 실제 매장 위치가 아닙니다.</span>'
-                                    if guessed_regions else ''
+                                popup_address_txt = (
+                                    "추정 위치: " + ' / '.join(guessed_regions) + " 인근"
+                                    if missing_address and guessed_regions else address_txt
                                 )
+                                popup_address_html = escape(popup_address_txt, quote=True)
                                 # 팝업과 복사 문구에 동일한 K노트 연락처를 표시합니다.
                                 contact_values = g.get('K노트 연락처', pd.Series(dtype=str))
                                 contacts = list(dict.fromkeys(
@@ -3381,7 +3380,7 @@ with main_container:
                                     </div>
                                     
                                     <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:3px; word-break:keep-all;'>
-                                        📍 {address_txt}{location_hint_html}
+                                        📍 {popup_address_html}
                                     </div>
                                     <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
                                         ☎ K노트 연락처 : {contact_html}
