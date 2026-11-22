@@ -1812,12 +1812,29 @@ def _inv_results_component(asset_version):
                                   css=_INV_RESULTS_CSS, js=_INV_RESULTS_JS)
 
 
-def _inv_facet_options(frame,cols,models,colors):
+def _inv_region_options(frame,zones):
+    subset=frame
+    if zones:
+        zone=frame.get('대분류_캐시',pd.Series('미분류',index=frame.index))
+        subset=frame.loc[zone.isin(zones)]
+    if '소분류_캐시' not in subset:return []
+    return sorted({_inv_text(v) for v in subset['소분류_캐시'].dropna().unique() if _inv_text(v)})
+
+
+def _inv_facet_options(frame,cols,models,colors,zones=None,small=None):
     subset=frame
     if models:subset=subset.loc[subset[cols['model']].astype(str).isin(models)]
     available_colors=sorted({_inv_text(v) for v in subset[cols['color']].dropna().unique() if _inv_text(v)}) if cols['color'] else []
     colors=[v for v in colors if v in available_colors]
     if colors and cols['color']:subset=subset.loc[subset[cols['color']].astype(str).isin(colors)]
+    zone=subset.get('대분류_캐시',pd.Series('미분류',index=subset.index))
+    if zones:subset=subset.loc[zone.isin(zones)]
+    if small:
+        region=subset.get('소분류_캐시',pd.Series('미분류',index=subset.index))
+        unknown=subset.get('소분류_유추불가',pd.Series(False,index=subset.index)).fillna(False)
+        region_mask=region.isin(small)|unknown
+        if '집단상가' in small:region_mask|=zone.reindex(subset.index).eq('집단상가')
+        subset=subset.loc[region_mask]
     owners=sorted({_inv_text(v) for v in subset[cols['owner']].dropna().unique() if _inv_text(v)})
     return available_colors,owners
 
@@ -1829,7 +1846,7 @@ def _inv_dashboard(frame, file_version, tile_url):
     if not cols['model'] or not cols['owner']:
         st.error('재고표에서 모델명/보유처 열을 찾지 못했습니다. 기존 파일은 수정하지 않았습니다.')
         return
-    option_key = ('inventory-ui-v3', file_version, frame.attrs.get('_db_revision'))
+    option_key = ('inventory-ui-v4', file_version, frame.attrs.get('_db_revision'))
     if st.session_state.get('_inv_option_key') != option_key:
         def values(column):
             return sorted({_inv_text(v) for v in frame[column].dropna().unique() if _inv_text(v)}) if column else []
@@ -1846,7 +1863,13 @@ def _inv_dashboard(frame, file_version, tile_url):
     selected_models=[v for v in selected_models if v in options['models']]
     selected_colors=st.session_state.get('filter_selected_colors')
     if not isinstance(selected_colors,list):selected_colors=list(st.query_params.get_all('c'))
-    options['colors'],options['owners']=_inv_facet_options(frame,cols,selected_models,selected_colors)
+    selected_zones=st.session_state.get('filter_selected_dae')
+    if not isinstance(selected_zones,list):selected_zones=list(st.query_params.get_all('d'))
+    selected_zones=[v for v in selected_zones if v in options['dae']]
+    options['so']=_inv_region_options(frame,selected_zones)
+    selected_small=st.session_state.get('filter_selected_so',[])
+    selected_small=[v for v in selected_small if v in options['so']] if isinstance(selected_small,list) else []
+    options['colors'],options['owners']=_inv_facet_options(frame,cols,selected_models,selected_colors,selected_zones,selected_small)
     suffixes = dict(models='model', colors='color', dae='dae', so='so', owners='owner')
     qp = dict(models='m', colors='c', dae='d')
     for field, suffix in suffixes.items():
