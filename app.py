@@ -115,6 +115,8 @@ def _recovery_component():
         };
         const status = (text, offerReload=false) => {
             if (r.disposed && text) return;
+            const badge=document.getElementById('inv-connection-badge');
+            if(badge)badge.textContent=!navigator.onLine?'● 연결 끊김':text?'● 연결 확인 중':'● 연결됨';
             r.statusText = text;
             r.offerReload = offerReload;
             const el = document.getElementById('inventory-connection-status');
@@ -196,6 +198,8 @@ def _recovery_component():
                     next[name]=Array.from(box.querySelectorAll('[data-baseweb="tag"]')).map(x=>x.querySelector('span[title]')?.getAttribute('title') || x.textContent.trim());
                 }
                 if (r.ownerIntent) next.owners=r.ownerIntent;
+                const serialBox=document.querySelector('.st-key-filter_serial_query input');
+                if (serialBox) next.serial=serialBox.value;
                 return next;
             };
             const changed = () => {
@@ -209,7 +213,7 @@ def _recovery_component():
                 const target=event.target;
                 if (!(target instanceof Element)) return;
                 if (target.closest('[class*="st-key-filter_multiselect_"]') ||
-                    target.closest('[role="option"]')) {
+                    target.closest('[role="option"]') || target.closest('.st-key-filter_serial_query')) {
                     r.captureUntil=Date.now()+1500;
                     // Probe connectivity without restoring/rewriting widget values.
                     clearTimeout(r.interactionTimer);
@@ -252,6 +256,7 @@ def _recovery_component():
             document.addEventListener('click',click,true);
             document.addEventListener('click',interaction,true);
             document.addEventListener('keydown',interaction,true);
+            document.addEventListener('input',interaction,true);
             document.addEventListener('visibilitychange',resume);
             document.addEventListener('inventory-owner-intent',owner);
             window.addEventListener('online',resume);
@@ -285,6 +290,7 @@ def _recovery_component():
                 document.removeEventListener('click',click,true);
                 document.removeEventListener('click',interaction,true);
                 document.removeEventListener('keydown',interaction,true);
+                document.removeEventListener('input',interaction,true);
                 document.removeEventListener('visibilitychange',resume);
                 document.removeEventListener('inventory-owner-intent',owner);
                 window.removeEventListener('online',resume);
@@ -305,10 +311,12 @@ def render_recovery_bridge():
             return
         request = st.session_state.get("inventory_recovery_bridge", {}).get("request") or {}
         st.session_state["_recovery_ack"] = request.get("nonce")
-        if request.get("resume"):
-            st.session_state["_recovery_full_rerun"] = True
+        # Existing sessions only acknowledge a foreground probe. A fresh session
+        # still restores filters/results through the explicit restore branch.
         if request.get("restore") and st.session_state.get("_recovery_fresh", True):
             draft = request.get("draft") or {}
+            if isinstance(draft.get('serial'), str):
+                st.session_state['_inv_serial_restore'] = draft['serial'][:256]
             for name, suffix in recovery_prefixes.items():
                 values = draft.get(name)
                 if isinstance(values, list) and all(isinstance(v, str) for v in values):
@@ -329,7 +337,9 @@ def render_recovery_bridge():
         data={
             "render_token": time.time_ns(),
             "user": st.session_state.get("username", ""),
-            "draft": {name: st.session_state.get("filter_selected_" + name, []) for name in recovery_prefixes},
+            "draft": {**{name: st.session_state.get("filter_selected_" + name, []) for name in recovery_prefixes},
+                      "serial": st.session_state.get("filter_serial_query", "")},
+            "serial": st.session_state.get("filter_serial_query", ""),
             "last": st.session_state.get("_last_search_conditions"),
             "fresh": st.session_state.get("_recovery_fresh", True),
             "ack": st.session_state.get("_recovery_ack"),
@@ -554,6 +564,11 @@ def reset_inventory_filters():
         state["tmp_selected_" + name] = []
         state[f"filter_multiselect_{suffix}_0"] = []
 
+    state['filter_serial_query'] = ''
+    state.pop('_inv_serial_restore', None)
+    state.pop('_inv_payload', None)
+    state.pop('_inv_payload_key', None)
+    state.pop('_inv_pending_query', None)
     state["filtered_data"] = None
     state["selected_idx"] = None
     state["clicked_store_name"] = None
@@ -1083,6 +1098,8 @@ def make_session_token(password_hash):
     return hashlib.sha256((password_hash + today).encode()).hexdigest()
 
 # ==============================================================================
+st.markdown('<style>\n.stApp{background:#f4f7f3!important;background-image:none!important;color:#294a3c!important}\nheader[data-testid="stHeader"]{background:#f4f7f3!important}\n.stApp :is(.stMarkdown,.stText,p,span,label,h1,h2,h3,h4,h5,h6,li){color:#294a3c!important}\n.stApp .block-container{max-width:820px!important;padding-top:3.5rem!important;padding-bottom:1.4rem!important}\n.stApp section[data-testid="stSidebar"]{background:#edf3ed!important;border-color:#cfdacf!important}\ndiv[data-baseweb="select"]>div,div[data-baseweb="base-input"]>input,div[data-testid="stTextInput"] input{background:#fff!important;color:#294a3c!important;border:1px solid #cbd7ca!important;border-radius:6px!important}\ndiv[data-baseweb="select"] input{color:#294a3c!important;-webkit-text-fill-color:#294a3c!important}\ndiv[data-baseweb="select"]>div>div>div{color:#5d7467!important}\ninput::placeholder,textarea::placeholder{color:#738579!important;opacity:1!important}\ndiv[data-baseweb="popover"]>div,div[data-baseweb="popover"]>div>div,div[data-baseweb="popover"] ul,ul[role="listbox"],div[role="listbox"]{background:#fff!important;border-color:#cbd7ca!important}\ndiv[data-baseweb="popover"] :is(div,span,li),div[role="listbox"] :is(span,div){color:#294a3c!important}\nli[role="option"]{background:#fff!important;color:#294a3c!important}\nli[role="option"]:hover,li[role="option"][aria-selected="true"]{background:#e7eee3!important;color:#294a3c!important}\n.stApp span[data-baseweb="tag"]{background:#e6eddf!important;color:#294a3c!important;border:1px solid #c6d2bf!important}\n.stApp div.stButton>button,.stApp div[data-testid="stFormSubmitButton"]>button{background:#edf2e9!important;color:#365142!important;border:1px solid #ccd6c8!important;box-shadow:none!important}\n.stApp [data-testid="stFileUploadDropzone"]{background:#edf2e9!important;border:1px dashed #bccbb9!important}\n.stApp [data-testid="stFileUploadDropzone"] *{color:#365142!important}\n.stApp [data-testid="stFileUploadDropzone"] svg{fill:#365142!important}\n.stApp hr{background:#cbd7ca!important;height:1px!important}\n.stApp [data-testid="stExpander"]{border:0!important;border-radius:0!important;background:transparent!important}\n.stApp [data-testid="stExpander"] summary{padding:4px 0!important;min-height:36px!important}\n.stApp [data-testid="stExpander"] summary p{font-size:13px!important}\n.inv-brand{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0 13px;border-bottom:1px solid #cbd7ca;margin-bottom:2px;font-family:Arial,"Malgun Gothic",sans-serif;font-size:18px}\n.inv-file-heading{min-width:0;flex:1;display:grid;gap:3px}\n.stApp .inv-file-label{font-size:11px!important;color:#718575!important}\n.stApp .inv-file-name{display:block;color:#294a3c!important;font-size:16px;font-weight:500;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}\n.stApp section[data-testid="stSidebar"] strong{color:#294a3c!important}\n.stApp .inv-brand #inv-connection-badge{font-size:12px!important;color:#287d53!important;white-space:nowrap}\n.stApp section[data-testid="stSidebar"] [data-testid="stRadio"]{margin-top:0!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label{border-radius:7px;padding:7px 8px;margin:2px 0}\n.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked){background:#e1ead8!important;border-left:3px solid #998347}\n.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked)>div:first-child{background:#998347!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked)>div:first-child>div{background:#f8faf5!important}\n.stApp section[data-testid="stSidebar"] hr{margin:12px 0!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] :is(div,section){background:#edf3ed!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] button{background:#f8faf5!important;color:#365142!important;border:1px solid #bccbb9!important;box-shadow:none!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] button :is(p,span){color:#365142!important}\n.stApp section[data-testid="stSidebar"] [data-testid="stAlert"]{background:#e4eedf!important;border:1px solid #c9d9c3!important}\n.stApp [data-testid="stExpanderDetails"]{background:#f4f7f3!important;color:#294a3c!important}\n.stApp div[data-testid="stForm"]{background:#fbfcf9!important;border:1px solid #cbd7ca!important;box-shadow:none!important;border-radius:12px!important;padding:20px!important}\n.stApp .title-text{font-size:25px!important;font-weight:500!important;color:#294a3c!important;letter-spacing:0!important;margin:8px 0!important}\n.stApp .subtitle-text{font-size:13px!important;color:#6b7e6e!important;margin-bottom:18px!important}\n.st-key-inv_login_shell{max-width:420px!important;margin:20px auto!important}\n.stApp .logo-container img{max-width:130px!important}\n.stApp div[data-testid="stFormSubmitButton"]>button[data-testid]{background:#8d7837!important;border:1px solid #8d7837!important;border-radius:7px!important;box-shadow:none!important}\n.stApp [data-testid="stFormSubmitButton"]>button p{color:#fff!important;font-weight:400!important}\n.stApp .inv-auth-wait{background:#fbfcf9!important;border:1px solid #cbd7ca!important;box-shadow:0 4px 18px #294a3c12!important;padding:24px!important;width:min(360px,90vw)!important}\n.stApp .inv-auth-wait h3{font-size:18px!important;color:#826a2c!important}\n.inv-footer{border-top:1px solid #cbd7ca;padding-top:10px;margin-top:16px;display:flex;justify-content:space-between;gap:12px;font-size:11px}\n.st-key-inv_file_meta [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;align-items:center!important}\n.st-key-inv_file_meta [data-testid="stColumn"]:first-child{min-width:0!important;flex:5 1 0!important;width:0!important}\n.st-key-inv_file_meta [data-testid="stColumn"]:last-child{min-width:78px!important;flex:1 1 0!important;width:0!important}\n.st-key-inv_refresh_sources div.stButton>button[data-testid]{background:transparent!important;border:0!important;padding:4px!important;min-height:32px!important;box-shadow:none!important}\n.st-key-inv_refresh_sources button p{font-size:12px!important}\n.st-key-inv_primary_filters [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:6px!important}\n.st-key-inv_primary_filters [data-testid="stColumn"],.st-key-inv_primary_filters [data-testid="column"]{min-width:0!important;flex:1 1 0!important;width:0!important}\n.st-key-inv_primary_filters [data-testid="stColumn"]:first-child{flex-grow:1.5!important}\n.st-key-inv_primary_filters [data-testid="stColumn"]:nth-child(2){flex-grow:.8!important}\n.st-key-inv_primary_filters [data-testid="stColumn"]:last-child{flex-grow:1.3!important}\n.st-key-inv_primary_filters label p{font-size:13px!important}\n.st-key-inv_primary_filters [data-baseweb="select"]>div{padding-left:5px!important;padding-right:3px!important;min-height:40px!important}\n.st-key-inv_primary_filters [data-baseweb="tag"]{max-width:100%!important;font-size:12px!important}\n.st-key-inv_primary_filters [data-baseweb="tag"] span[title]{font-size:12px!important}\n.st-key-inv_primary_filters [aria-label="Clear all"]{display:none!important}\n.st-key-inv_query_actions [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:8px!important}\n.st-key-inv_query_actions [data-testid="stColumn"]{min-width:0!important;flex:3 1 0!important;width:0!important}\n.st-key-inv_query_actions [data-testid="stColumn"]:last-child{flex-grow:1!important}\n.st-key-inventory_reset_filters div.stButton>button[data-testid]{background:transparent!important;color:#506b5b!important;border:0!important;font-size:12px!important;min-height:40px!important;padding:4px!important;box-shadow:none!important}\n.st-key-inventory_reset_filters button p{font-size:12px!important}\n.st-key-inventory_search_button div.stButton>button[data-testid]{background:#8d7837!important;color:#fff!important;border:1px solid #8d7837!important;min-height:40px!important;padding:6px!important;box-shadow:none!important}\n.st-key-inventory_search_button div.stButton>button[data-testid] p{color:#fff!important;font-weight:400!important;font-size:14px!important}\n.st-key-inventory_search_button div.stButton>button[data-testid]:disabled{background:#b6aa81!important;border-color:#b6aa81!important;opacity:1!important}\n#inventory-connection-status{background:#eef0df;color:#705e29;padding:9px;border-radius:6px;font-size:13px}\n@media(max-width:640px){\n .st-key-inv_primary_filters [data-testid="stHorizontalBlock"]{flex-direction:column!important;gap:2px!important;align-items:stretch!important}\n .st-key-inv_primary_filters [data-testid="stColumn"]:nth-child(n),\n .st-key-inv_primary_filters [data-testid="column"]:nth-child(n){width:100%!important;min-width:0!important;flex:0 0 auto!important;padding:0!important}\n .st-key-inv_primary_filters [data-testid="stVerticalBlock"]{gap:0!important}\n .st-key-inv_primary_filters [data-testid="stElementContainer"]{margin:0!important;padding:0!important}\n .st-key-inv_primary_filters [data-testid="stWidgetLabel"]{margin-bottom:0!important;min-height:18px!important;padding:0!important}\n .st-key-inv_primary_filters [data-testid="stWidgetLabel"] p{margin:0!important;line-height:18px!important}\n}\n\n.stApp .st-key-inv_admin_shell h2{font-size:23px!important;font-weight:500!important;padding:6px 0!important}\n.stApp .st-key-inv_admin_shell h3,.stApp .st-key-inv_admin_shell h4{font-size:17px!important;font-weight:500!important;padding:8px 0!important}\n.stApp .st-key-inv_admin_shell [data-baseweb="tab-list"]{background:transparent!important;gap:0!important;border-bottom:1px solid #cbd7ca!important}\n.stApp .st-key-inv_admin_shell [data-baseweb="tab"]{background:transparent!important;flex:1 1 0!important;padding:10px 6px!important;min-height:44px!important;white-space:nowrap!important}\n.stApp .st-key-inv_admin_shell [data-baseweb="tab"][aria-selected="true"]{background:#e7eee1!important}\n.stApp .st-key-inv_admin_shell [data-baseweb="tab-highlight"]{background:#8d7837!important}\n.stApp .st-key-inv_admin_shell [data-baseweb="tab"] p{font-size:13px!important}\n.stApp .st-key-inv_admin_shell [data-testid="stVerticalBlockBorderWrapper"]>div{border-color:#cbd7ca!important;border-radius:10px!important}\n.stApp .st-key-inv_admin_shell [data-testid="stAlert"]{background:#edf2e7!important;border:1px solid #ccd8c7!important;border-radius:7px!important}\n.stApp .st-key-inv_admin_shell [data-testid="stFileUploader"] button{background:#f8faf5!important;color:#365142!important;border:1px solid #bccbb9!important;box-shadow:none!important}\n.stApp .st-key-inv_admin_shell [data-testid="stFileUploader"] button :is(p,span){color:#365142!important}\n.stApp .st-key-inv_admin_shell [data-testid="stExpander"]{border-bottom:1px solid #cbd7ca!important;padding:4px 0!important}\n@media(max-width:640px){.stApp .st-key-inv_admin_shell [data-testid="stHorizontalBlock"]{flex-direction:column!important;gap:8px!important}.stApp .st-key-inv_admin_shell [data-testid="stColumn"]{width:100%!important;min-width:0!important;flex:1 1 auto!important}.stApp .st-key-inv_admin_shell div[data-testid="stForm"]{padding:14px!important}}\n\n</style>', unsafe_allow_html=True)
+
 # [중요] 세션 상태 초기화 & 새로고침 로그인 유지 (오직 순수 Cookie 방식)
 # ==============================================================================
 if st.session_state.get("_logout_pending", False):
@@ -1141,7 +1158,7 @@ if not st.session_state['logged_in']:
     css_to_inject += """
     /* 로그인 화면에서는 사이드바를 통째로 숨김 */
     [data-testid="stSidebar"] { display: none !important; }
-    [data-testid="collapsedControl"] { display: none !important; }
+    [data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
 
     /* 구글시트 캐시 로딩 시 뜨는 영문 "Running ..." 안내 숨김 */
     [data-testid="stSpinner"] { display: none !important; }
@@ -1165,6 +1182,855 @@ if not st.session_state['logged_in'] and not st.session_state.get('_explicit_log
         st.session_state['username'] = saved_user
         st.session_state['role'] = saved_role
         # 💡 쿠키가 있으면 딜레이 없이 즉시 대시보드로 넘어갑니다.
+
+# Dealership import: pure parsing/planning + atomic Google Sheets commit.
+_DB_STORES = ['접점코드','보유처명','상권구분','대권역구분','사업장주소','집단구분','반추관설','대리점1','실적1','대리점2','실적1.1','x좌표','y좌표']
+_DB_INSIDE = ['접점코드','거래처 애칭','거래처구분','거래처구분상세','소속담당그룹','거래처 실명','대표자명','팩스번호','사업자번호','거래상태','거래시작일','업태','업종','전화번호','우편번호','주소','등록일','X좌표','Y좌표']
+_DB_TRACK = ['원본파일','자료기준일','반영시각','좌표기준주소','좌표상태','최근자료포함']
+
+
+def _db_text(v):
+    import math
+    if v is None or (isinstance(v,float) and math.isnan(v)):
+        return ''
+    return str(v).strip()
+
+
+def _db_address(v):
+    value=_db_text(v)
+    return '' if value.lower() in ('nan','none','null','<na>','-','미등록','주소 미등록') else value
+
+
+def _db_key(v):
+    import re
+    return re.sub(r'\s+','',_db_text(v)).casefold()
+
+
+def _db_schema(kind):
+    if kind not in ('stores','stores_inside'):
+        raise ValueError('자료 종류를 선택해주세요.')
+    return list(_DB_STORES if kind=='stores' else _DB_INSIDE)
+
+
+def _db_xy(x,y):
+    import math
+    try:
+        x,y=float(x),float(y)
+        return math.isfinite(x) and math.isfinite(y) and 124<=x<=132 and 33<=y<=39.5
+    except (TypeError,ValueError):
+        return False
+
+
+def _db_frame(values):
+    """Strict existing DB read; no positional guessing or duplicate-key deletion."""
+    if not values:
+        return pd.DataFrame()
+    headers=[_db_text(v) for v in values[0]]
+    used=[i for i,h in enumerate(headers) if h]
+    names=[headers[i] for i in used]
+    if len(names)!=len(set(names)):
+        raise ValueError('기존 DB의 열 이름이 중복됩니다. 먼저 중복 열을 확인해주세요.')
+    rows=[[_db_text(row[i]) if i<len(row) else '' for i in used] for row in values[1:] if any(_db_text(row[i]) for i in used if i<len(row))]
+    frame=pd.DataFrame(rows,columns=names)
+    if len(frame) and ('접점코드' not in frame or frame['접점코드'].eq('').any() or frame['접점코드'].duplicated().any()):
+        raise ValueError('기존 DB의 접점코드가 누락되거나 중복됩니다. 자동 덮어쓰기를 중단합니다.')
+    return frame
+
+
+def _db_fingerprint(frame):
+    import hashlib,json
+    columns=[_db_text(c) for c in frame.columns]
+    rows=[[_db_text(v) for v in row] for row in frame.itertuples(index=False,name=None)]
+    return hashlib.sha256(json.dumps([columns,rows],ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
+
+
+def _db_required(kind):
+    return ['접점코드','보유처명','사업장주소','반추관설'] if kind=='stores' else ['접점코드','거래처 애칭','주소','전화번호']
+
+
+def _db_aliases(kind):
+    aliases={c:[c] for c in _db_schema(kind)}
+    if kind=='stores':
+        aliases.update({'접점코드':['접점코드','접점번호'],'보유처명':['접점명','보유처명'],'사업장주소':['사업장주소','주소'],'실적1':['판매건수','실적1'],'x좌표':['x좌표','경도'],'y좌표':['y좌표','위도']})
+    else:
+        aliases.update({'접점코드':['접점코드','접점번호'],'주소':['주소','사업장주소'],'X좌표':['X좌표','경도'],'Y좌표':['Y좌표','위도'],'비고':['비고']})
+    return aliases
+
+
+def _db_letter(index):
+    text='';index+=1
+    while index:index,part=divmod(index-1,26);text=chr(65+part)+text
+    return text
+
+
+def _db_auto_map(headers,kind):
+    keys=[_db_key(v) for v in headers];mapping={}
+    for field,labels in _db_aliases(kind).items():
+        indices=[i for i,key in enumerate(keys) if key in {_db_key(v) for v in labels}]
+        mapping[field]=indices[0] if len(indices)==1 else None
+    return mapping
+
+
+def _db_probe(raw_bytes,kind):
+    # Probe only the first 30 rows; no worksheet writes or external requests.
+    import io
+    _db_schema(kind)
+    book=pd.ExcelFile(io.BytesIO(raw_bytes),engine='openpyxl')
+    candidates=[];sheets=list(book.sheet_names)
+    try:
+        for sheet in sheets:
+            probe=pd.read_excel(book,sheet_name=sheet,header=None,nrows=30,dtype=str).fillna('')
+            for index,row in probe.iterrows():
+                mapping=_db_auto_map(list(row),kind)
+                score=sum(mapping.get(field) is not None for field in _db_required(kind))
+                if score>=2:candidates.append((score,sheet,int(index)+1))
+    finally:book.close()
+    if candidates:
+        best=max(row[0] for row in candidates);best_rows=[row for row in candidates if row[0]==best]
+        if len(best_rows)==1:return dict(sheets=sheets,sheet=best_rows[0][1],header_row=best_rows[0][2],automatic=True)
+    return dict(sheets=sheets,sheet=sheets[0],header_row=1,automatic=False)
+
+
+def _db_headers(raw_bytes,sheet,header_row):
+    import io
+    raw=pd.read_excel(io.BytesIO(raw_bytes),sheet_name=sheet,header=None,skiprows=header_row-1,nrows=6,dtype=str,engine='openpyxl').fillna('')
+    if raw.empty:raise ValueError('선택한 제목행이 비어 있습니다.')
+    return [_db_text(v) for v in raw.iloc[0]],raw.iloc[1:].reset_index(drop=True)
+
+
+def _db_parse_table(raw,kind,column_map=None):
+    headers=[_db_text(v) for v in raw.iloc[0]]
+    keys=[_db_key(v) for v in headers]
+    # Recognized source signatures prevent the common wrong-box upload.
+    if kind=='stores' and '거래처애칭' in keys and '반추관설' not in keys:
+        raise ValueError('대리점 거래처 파일입니다. 거래처 업로드 영역을 사용해주세요.')
+    if kind=='stores_inside' and '반추관설' in keys and '거래처애칭' not in keys:
+        raise ValueError('본사 판매여지도 파일입니다. 판매여지도 업로드 영역을 사용해주세요.')
+    data=raw.iloc[1:].copy();data.columns=range(len(headers))
+    choices=_db_auto_map(headers,kind)
+    if column_map is not None:
+        if set(column_map)-set(choices):raise ValueError('알 수 없는 DB 항목이 연결돼 있습니다.')
+        choices.update(column_map)
+    used=[value for value in choices.values() if value is not None]
+    if any(isinstance(value,bool) or not isinstance(value,int) or not 0<=value<len(headers) for value in used):raise ValueError('선택한 원본 열을 다시 확인해주세요.')
+    if len(used)!=len(set(used)):raise ValueError('같은 원본 열을 두 DB 항목에 중복 연결했습니다.')
+    frame=pd.DataFrame(index=data.index);mapping={}
+    for target,index in choices.items():
+        if index is not None:
+            mapping[target]=_db_letter(index)+'열 · '+(headers[index] or '이름 없는 열')
+            frame[target]=data[index].map(_db_text)
+    missing=[field for field in _db_required(kind) if field not in frame]
+    if missing:raise ValueError('필수 열 연결 필요: '+', '.join(missing))
+    for i,header in enumerate(headers):
+        if i in used or header=='번호' or not data[i].map(_db_text).ne('').any():continue
+        # Preserve added/unknown columns instead of dropping business data.
+        label=header or '이름없는열_'+_db_letter(i)
+        if header and keys.count(keys[i])>1:label+='_'+str(keys[:i+1].count(keys[i]))
+        target='원본_'+label
+        if target in frame:raise ValueError('보존할 원본 열 이름이 중복됩니다: '+label)
+        frame[target]=data[i].map(_db_text)
+    meaningful=frame.apply(lambda row:any(_db_text(v) for v in row),axis=1)
+    frame=frame.loc[meaningful].copy()
+    frame['접점코드']=frame['접점코드'].str.strip()
+    if frame.empty:raise ValueError('반영할 거래처가 없습니다.')
+    if frame['접점코드'].eq('').any():raise ValueError('접점코드가 빈 행이 있습니다. 해당 행을 확인해주세요.')
+    if frame['접점코드'].duplicated().any():raise ValueError('접점코드가 중복됩니다. 마지막 행으로 임의 덮어쓰지 않습니다.')
+    return frame.reset_index(drop=True),mapping
+
+
+def _db_parse(raw_bytes,kind,sheet=None,header_row=None,column_map=None):
+    import io
+    if sheet is None or header_row is None:
+        profile=_db_probe(raw_bytes,kind)
+        if not profile['automatic']:raise ValueError('제목행을 자동 확정하지 못했습니다. 시트와 제목행을 직접 선택해주세요.')
+        sheet,header_row=profile['sheet'],profile['header_row']
+    if isinstance(header_row,bool) or not isinstance(header_row,int) or not 1<=header_row<=100:raise ValueError('제목행은 1~100행으로 지정해주세요.')
+    raw=pd.read_excel(io.BytesIO(raw_bytes),sheet_name=sheet,header=None,skiprows=header_row-1,dtype=str,engine='openpyxl').fillna('')
+    if raw.empty:raise ValueError('선택한 제목행에 데이터가 없습니다.')
+    frame,mapping=_db_parse_table(raw,kind,column_map)
+    return frame,dict(sheet=sheet,header_row=header_row,mapping=mapping,rows=len(frame))
+
+
+def _db_plan(old,incoming,kind,filename,source_date,now):
+    """Upsert by ID; keep omitted rows/custom columns, invalidate changed-address XY."""
+    schema=_db_schema(kind);addr='사업장주소' if kind=='stores' else '주소'
+    x,y=('x좌표','y좌표') if kind=='stores' else ('X좌표','Y좌표')
+    old=old.copy().fillna('')
+    if not old.empty:
+        if '접점코드' not in old:raise ValueError('기존 DB에 접점코드가 없습니다.')
+        old['접점코드']=old['접점코드'].map(_db_text)
+        if old['접점코드'].duplicated().any() or old['접점코드'].eq('').any():raise ValueError('기존 DB 접점코드 중복/누락으로 저장을 중단합니다.')
+    columns=list(dict.fromkeys(schema+[str(c) for c in old.columns]+[str(c) for c in incoming.columns]+_DB_TRACK))
+    old=old.reindex(columns=columns,fill_value='')
+    existing={row['접점코드']:row for row in old.to_dict('records')}
+    result={k:dict(v) for k,v in existing.items()}
+    for row in result.values():row['최근자료포함']='이전자료유지'
+    changes=[]
+    source_date=str(source_date)
+    for fresh in incoming.to_dict('records'):
+        code=fresh['접점코드'];previous=existing.get(code);row=dict(previous) if previous else dict.fromkeys(columns,'')
+        old_address=_db_address(row.get(addr));new_address=_db_address(fresh.get(addr))
+        changed_address=_db_key(old_address)!=_db_key(new_address)
+        # No accidental downgrade by importing an older dated source.
+        previous_date=_db_text(row.get('자료기준일'))
+        if previous_date and source_date<previous_date:raise ValueError('더 최신 자료가 이미 반영된 거래처가 있습니다. 자료 기준일을 확인해주세요.')
+        for col,value in fresh.items():
+            if col not in (x,y):row[col]=_db_text(value)
+        row[addr]=new_address
+        tracked_address=_db_text(row.get('좌표기준주소'))
+        trusted_old=bool(new_address) and _db_xy(row.get(x),row.get(y)) and not changed_address and (not tracked_address or _db_key(tracked_address)==_db_key(new_address))
+        # Supplied XY is only accepted from named coordinate columns, never fallbacks.
+        if new_address and _db_xy(fresh.get(x),fresh.get(y)):
+            row[x],row[y]=_db_text(fresh[x]),_db_text(fresh[y]);row['좌표상태']='제공좌표'
+        elif not trusted_old:
+            row[x]=row[y]=''
+            row['좌표상태']='주소누락' if not new_address else '좌표대기'
+        else:row['좌표상태']='기존좌표유지'
+        row['좌표기준주소']=new_address if _db_xy(row.get(x),row.get(y)) else ''
+        row.update({'원본파일':filename,'자료기준일':source_date,'반영시각':now,'최근자료포함':'포함'})
+        status='신규' if previous is None else '주소변경' if changed_address else '정보변경' if any(_db_text(previous.get(c))!=_db_text(row.get(c)) for c in incoming.columns if c not in (x,y)) else '유지'
+        changes.append({'접점코드':code,'거래처':row.get('보유처명') or row.get('거래처 애칭'),'변경':status,'이전 주소':old_address,'새 주소':new_address,'좌표상태':row['좌표상태']})
+        result[code]=row
+    out=pd.DataFrame(list(result.values()),columns=columns).fillna('')
+    stats={key:sum(c['변경']==key for c in changes) for key in ['신규','주소변경','정보변경','유지']}
+    stats.update({'이전자료유지':len(set(existing)-set(incoming['접점코드'])),'좌표대기':int(out['좌표상태'].eq('좌표대기').sum()),'주소누락':sum(not _db_text(v) for v in incoming[addr])})
+    return out,pd.DataFrame(changes),stats
+
+
+def _db_revision():
+    import os
+    try:
+        stat=os.stat('db_revision.txt')
+        return (stat.st_mtime_ns,stat.st_size)
+    except OSError:return (0,0)
+
+
+def _db_touch_revision():
+    import os,tempfile,uuid
+    fd,path=tempfile.mkstemp(prefix='.db-revision-',dir='.')
+    try:
+        with os.fdopen(fd,'w',encoding='utf-8') as file:file.write(uuid.uuid4().hex)
+        os.replace(path,'db_revision.txt')
+    finally:
+        if os.path.exists(path):os.remove(path)
+
+
+def _db_open():
+    # Same existing authenticated connection; no additional account/key required.
+    return get_gsheets_connection().client._open_spreadsheet(spreadsheet=GSHEET_URL)
+
+
+def _db_read(kind):
+    book=_db_open();ws=book.worksheet(kind)
+    return _db_frame(ws.get_all_values(value_render_option='FORMULA'))
+
+
+def _db_commit(kind,expected,out):
+    """Backup + data write are a single Sheets batch. No clear-then-write gap."""
+    import uuid
+    _db_schema(kind)
+    book=_db_open();ws=book.worksheet(kind)
+    current=_db_frame(ws.get_all_values(value_render_option='FORMULA'))
+    if _db_fingerprint(current)!=expected:
+        raise ValueError('미리보기 이후 DB가 변경됐습니다. 다시 비교해주세요.')
+    stamp=datetime.now(timezone(timedelta(hours=9))).strftime('%Y%m%d_%H%M%S')
+    backup=f'_backup_{kind}_{stamp}_{uuid.uuid4().hex[:6]}'
+    values=[list(out.columns)]+[[_db_text(v) for v in row] for row in out.itertuples(index=False,name=None)]
+    rows=max(ws.row_count,len(values));cols=max(ws.col_count,len(out.columns))
+    original_by_id={row.get('접점코드'):row for row in current.to_dict('records')}
+    def cell_values(index,row):
+        previous=original_by_id.get(row[out.columns.get_loc('접점코드')],{}) if index else {}
+        return [{'userEnteredValue':{('formulaValue' if index and str(value).startswith('=') and previous.get(out.columns[col])==value else 'stringValue'):_db_text(value)}} for col,value in enumerate(row)]
+    requests=[{'duplicateSheet':{'sourceSheetId':ws.id,'newSheetName':backup}},
+              {'updateSheetProperties':{'properties':{'sheetId':ws.id,'gridProperties':{'rowCount':rows,'columnCount':cols}},'fields':'gridProperties.rowCount,gridProperties.columnCount'}},
+              {'updateCells':{'range':{'sheetId':ws.id,'startRowIndex':0,'endRowIndex':rows,'startColumnIndex':0,'endColumnIndex':cols},
+                              'rows':[{'values':cell_values(i,row)} for i,row in enumerate(values)], 'fields':'userEnteredValue'}}]
+    # Sheets applies this batch atomically. Concurrent edits between the read and
+    # this request remain a limitation; we never claim a cross-client lock.
+    book.batch_update({'requests':requests})
+    verified=_db_frame(ws.get_all_values(value_render_option='FORMULA'))
+    if _db_fingerprint(verified)!=_db_fingerprint(out):
+        raise RuntimeError('반영 후 확인값이 다릅니다. 다시 저장하지 말고 백업 시트 '+backup+'를 확인해주세요.')
+    _db_touch_revision()
+    st.session_state.pop('_inv_payload_key',None);st.session_state.pop('_inv_option_key',None)
+    st.cache_data.clear()
+    audit=globals().get('add_audit_log')
+    if callable(audit):
+        try:audit(st.session_state.get('username','admin'),'거래처 자료 반영',f'{kind} {len(out)}건 · 백업 {backup}')
+        except Exception:pass
+    return backup
+
+
+def _db_geocode(address):
+    import urllib.request,urllib.parse,json
+    cid=globals().get('NAVER_CLIENT_ID');secret=globals().get('NAVER_CLIENT_SECRET')
+    if not cid or not secret:raise ValueError('주소 변환 API 설정을 확인해주세요.')
+    request=urllib.request.Request('https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query='+urllib.parse.quote(address),headers={'X-NCP-APIGW-API-KEY-ID':cid,'X-NCP-APIGW-API-KEY':secret})
+    with urllib.request.urlopen(request,timeout=5) as response:body=json.load(response)
+    found=body.get('addresses',[])
+    if not found:return None
+    point=found[0]
+    # Do not silently accept an ambiguous list of candidate addresses.
+    if len(found)!=1:return None
+    return (point['x'],point['y']) if _db_xy(point.get('x'),point.get('y')) else None
+
+
+def _db_geocode_batch(frame,kind,geocoder,limit=20):
+    addr='사업장주소' if kind=='stores' else '주소';x,y=('x좌표','y좌표') if kind=='stores' else ('X좌표','Y좌표')
+    import time
+    out=frame.copy();count=success=failed=0;memo={};deadline=time.monotonic()+20
+    for index,row in out.iterrows():
+        address=_db_address(row.get(addr))
+        if not address or _db_xy(row.get(x),row.get(y)) or _db_text(row.get('좌표상태'))=='좌표확인필요':continue
+        if count>=limit or time.monotonic()>=deadline:break
+        count+=1
+        try:
+            key=_db_key(address)
+            if key not in memo:memo[key]=geocoder(address)
+            point=memo[key]
+            if not point:raise ValueError('단일 좌표 없음')
+            out.at[index,x],out.at[index,y]=map(str,point);out.at[index,'좌표기준주소']=address;out.at[index,'좌표상태']='좌표변환완료';success+=1
+        except Exception:
+            out.at[index,'좌표상태']='좌표확인필요';failed+=1
+    return out,dict(attempted=count,success=success,failed=failed)
+
+
+def _db_upload_panel():
+    st.markdown('#### 거래처 자료 갱신')
+    st.caption('파일명으로 구분하지 않습니다. 각 업로드 영역에서 파일 내부의 열을 검증합니다.')
+    with st.expander('본사 판매여지도 업로드 → stores',expanded=False):
+        _db_upload_source('stores')
+    with st.expander('대리점 거래처 업로드 → inside',expanded=False):
+        _db_upload_source('stores_inside')
+
+
+def _db_upload_source(kind):
+    import hashlib,json
+    prefix='db_'+kind+'_'
+    st.caption('저장 대상: '+kind+' · 기존 거래처는 자동 삭제하지 않습니다.')
+    source_date=st.date_input('자료 기준일',value=datetime.now(timezone(timedelta(hours=9))).date(),key=prefix+'date')
+    uploaded=st.file_uploader('본사 판매여지도 원본 엑셀' if kind=='stores' else '대리점 거래처 원본 엑셀',type=['xlsx'],key=prefix+'file')
+    preview_key=prefix+'preview'
+    if uploaded:
+        data=uploaded.getvalue();file_key=hashlib.sha256(data).hexdigest()
+        try:
+            if st.session_state.get(prefix+'profile_key')!=file_key:
+                st.session_state[prefix+'profile']=_db_probe(data,kind)
+                st.session_state[prefix+'profile_key']=file_key
+            profile=st.session_state[prefix+'profile']
+            # A new file/layout has independent widget state. Never reuse a column
+            # index from a previous file just because its filename is identical.
+            file_prefix=prefix+file_key[:16]+'_'
+            if not profile['automatic']:st.warning('제목행을 자동 확정하지 못했습니다. 아래에서 직접 지정해주세요.')
+            sheet=st.selectbox('데이터 시트',profile['sheets'],index=profile['sheets'].index(profile['sheet']),key=file_prefix+'sheet')
+            header_row=int(st.number_input('제목행 번호',min_value=1,max_value=100,value=profile['header_row'],step=1,key=file_prefix+'header'))
+            layout=(file_key,sheet,header_row)
+            if st.session_state.get(prefix+'layout')!=layout:
+                st.session_state[prefix+'headers']=_db_headers(data,sheet,header_row)
+                st.session_state[prefix+'layout']=layout
+            headers,sample=st.session_state[prefix+'headers']
+            defaults=_db_auto_map(headers,kind);mapping={}
+            layout_key=hashlib.sha256(json.dumps(layout).encode()).hexdigest()[:12]
+            with st.expander('열 연결 확인·수정 · 열 이름이 바뀌면 여기서 선택'):
+                st.caption('필수 항목(*)을 확인하세요. 선택 안 함인 부가 항목은 기존 DB 값을 유지합니다.')
+                for field,default in defaults.items():
+                    options=[-1]+list(range(len(headers)))
+                    selected_column=st.selectbox(field+(' *' if field in _db_required(kind) else ''),options,index=options.index(default if default is not None else -1),format_func=lambda i:'선택 안 함' if i==-1 else _db_letter(i)+'열 · '+(headers[i] or '이름 없는 열'),key=prefix+layout_key+'_'+field)
+                    mapping[field]=None if selected_column==-1 else selected_column
+                st.caption('선택한 제목행 아래의 원본 샘플')
+                view=sample.copy();view.columns=[_db_letter(i)+' · '+(v or '이름 없음') for i,v in enumerate(headers)]
+                st.dataframe(view,hide_index=True,use_container_width=True,height=180)
+            missing=[field for field in _db_required(kind) if mapping[field] is None]
+            chosen=[i for i in mapping.values() if i is not None]
+            duplicate=len(chosen)!=len(set(chosen))
+            if missing:st.warning('열 연결 필요: '+', '.join(missing))
+            if duplicate:st.error('같은 원본 열을 여러 DB 항목에 연결할 수 없습니다.')
+            token=hashlib.sha256(json.dumps([file_key,kind,str(source_date),sheet,header_row,mapping],ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+            if st.button('변경사항 확인',key=prefix+'preview_button',disabled=bool(missing or duplicate),use_container_width=True):
+                try:
+                    incoming,info=_db_parse(data,kind,sheet,header_row,mapping);old=_db_read(kind)
+                    now=datetime.now(timezone(timedelta(hours=9))).isoformat(timespec='seconds')
+                    out,changes,stats=_db_plan(old,incoming,kind,uploaded.name,source_date,now)
+                    st.session_state[preview_key]=dict(token=token,expected=_db_fingerprint(old),out=out,changes=changes,stats=stats,info=info)
+                except Exception as error:
+                    st.session_state.pop(preview_key,None);st.error('반영하지 않았습니다: '+str(error))
+            preview=st.session_state.get(preview_key)
+            if preview and preview['token']!=token:
+                st.session_state.pop(preview_key,None);preview=None
+            if preview:
+                info=preview['info']
+                st.caption(f"{info['sheet']} · 제목 {info['header_row']}행 · {info['rows']:,}개 거래처")
+                st.write(' · '.join(f'{k} {v:,}건' for k,v in preview['stats'].items()))
+                st.dataframe(preview['changes'],hide_index=True,use_container_width=True,height=260)
+                st.caption('기존 DB 백업 후 반영합니다. 주소가 바뀌면 기존 좌표를 그대로 쓰지 않습니다.')
+                if st.button('백업 후 반영',key=prefix+'apply_button',type='primary',use_container_width=True):
+                    try:
+                        backup=_db_commit(kind,preview['expected'],preview['out'])
+                        st.session_state[prefix+'success']='반영 완료 · 백업: '+backup
+                        st.session_state.pop(preview_key,None);st.rerun()
+                    except Exception as error:st.error('완료 여부를 확인하지 못했습니다. DB/백업을 확인한 뒤 다시 비교해주세요. '+str(error))
+        except Exception as error:
+            st.session_state.pop(preview_key,None);st.error('파일을 확인해주세요: '+str(error))
+    else:
+        st.session_state.pop(preview_key,None)
+    if st.session_state.get(prefix+'success'):st.success(st.session_state[prefix+'success'])
+    if st.button('현재 반영 상태 확인',key=prefix+'status',use_container_width=True):
+        try:
+            current=_db_read(kind);st.write(f'현재 {len(current):,}개 거래처')
+            metadata=[c for c in ['원본파일','자료기준일','반영시각'] if c in current]
+            if metadata:st.dataframe(current[metadata].drop_duplicates().tail(10),hide_index=True,use_container_width=True)
+        except Exception as error:st.error('상태 확인 실패: '+str(error))
+    st.caption('좌표는 관리자 화면에서 최대 20건씩 처리합니다. 조회 시 API를 호출하지 않습니다.')
+    if st.button('미처리 좌표 생성 · 최대 20건',key=prefix+'geocode',use_container_width=True):
+        try:
+            with st.spinner('좌표 확인 중…'):
+                current=_db_read(kind);expected=_db_fingerprint(current)
+                out,stats=_db_geocode_batch(current,kind,_db_geocode)
+                if stats['attempted']:
+                    backup=_db_commit(kind,expected,out)
+                    st.success(f"완료 {stats['success']}건 · 확인 필요 {stats['failed']}건 · 백업 {backup}")
+                else:st.info('처리할 주소가 없습니다. 실패한 주소는 확인 후 원본을 다시 반영하면 재시도할 수 있습니다.')
+        except Exception as error:st.error('좌표 처리 실패: '+str(error))
+
+# Dashboard helpers: only read inventory data; never update Google Sheets.
+def _inv_columns(frame):
+    names = {str(c).replace('▼', '').strip(): c for c in frame.columns}
+    def find(*parts):
+        for part in parts:
+            if part in names:
+                return names[part]
+        return next((c for c in frame.columns if any(p in str(c) for p in parts)), None)
+    return dict(owner=find('보유처'), model=find('모델명'), color=find('색상명', '색상'),
+                kind=find('모델유형', '유형'), status=find('재고상태', '상태', '등급'),
+                target=find('출고일'), serial=find('일련번호'))
+
+
+def _inv_sales_mask(values):
+    return values.fillna('').astype(str).str.strip().str.match(r'^도매\s*[-－–—]', na=False)
+
+
+def _inv_text(value):
+    if value is None or pd.isna(value):
+        return ''
+    value = str(value).strip()
+    return '' if value.lower() in ('nan', 'none', 'null', '<na>', '-') else value
+
+
+def _inv_upload_info(data_path, name_path=None):
+    """Read real persisted upload metadata; never use the current query time."""
+    import os
+    info = dict(filename='재고표가 없습니다', time_text='사이드메뉴에서 재고표를 업로드해주세요.', exists=False)
+    if not data_path or not os.path.isfile(data_path):
+        return info
+    try:
+        stat = os.stat(data_path)
+    except OSError:
+        return info
+    info['exists'] = True
+    info['filename'] = os.path.basename(data_path)
+    if name_path:
+        try:
+            with open(name_path, encoding='utf-8') as file:
+                info['filename'] = file.read().strip() or info['filename']
+        except (OSError, UnicodeError):
+            pass
+    kst = timezone(timedelta(hours=9))
+    try:
+        with open(data_path + '.upload.json', encoding='utf-8') as file:
+            meta = json.load(file)
+        if meta.get('version') == [stat.st_mtime_ns, stat.st_size]:
+            timestamp = datetime.fromisoformat(meta['uploaded_at'])
+            if timestamp.tzinfo is not None:
+                info['filename'] = str(meta.get('filename') or info['filename'])
+                info['time_text'] = '업로드: ' + timestamp.astimezone(kst).strftime('%Y-%m-%d %H:%M:%S') + ' (한국시간)'
+                return info
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    # Old inventories have no historical upload timestamp. State the fallback.
+    info['time_text'] = '파일 저장: ' + datetime.fromtimestamp(stat.st_mtime, kst).strftime('%Y-%m-%d %H:%M:%S') + ' (한국시간 · 이전 업로드 기록 없음)'
+    return info
+
+
+def _inv_record_upload(data_path, filename):
+    """Atomic metadata sidecar; original name text remains backward compatible."""
+    import os, tempfile
+    stat = os.stat(data_path)
+    meta = dict(filename=filename, uploaded_at=datetime.now(timezone(timedelta(hours=9))).isoformat(timespec='seconds'),
+                version=[stat.st_mtime_ns, stat.st_size])
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=os.path.dirname(os.path.abspath(data_path)),
+                                         prefix='.inventory-upload-', suffix='.tmp', delete=False) as file:
+            temporary = file.name
+            json.dump(meta, file, ensure_ascii=False)
+        os.replace(temporary, data_path + '.upload.json')
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.remove(temporary)
+
+
+def _inv_source_header():
+    from html import escape
+    info = _inv_upload_info(globals().get('DATA_FILE'), globals().get('META_FILE'))
+    st.markdown('<div class="inv-brand"><div class="inv-file-heading"><span class="inv-file-label">현재 재고표</span><strong class="inv-file-name">'
+                + escape(info['filename']) + '</strong></div><span id="inv-connection-badge">● 연결됨</span></div>', unsafe_allow_html=True)
+    with st.container(key='inv_file_meta'):
+        left, right = st.columns([5,1], gap='small')
+        with left:
+            st.caption(info['time_text'])
+        with right:
+            if st.button('⟳ 갱신', key='inv_refresh_sources', use_container_width=True):
+                st.cache_data.clear()
+                st.session_state.pop('_inv_payload_key',None)
+                st.session_state.pop('_inv_option_key',None)
+                st.rerun(scope='app')
+    return info
+
+
+def _inv_filter(frame, conditions, cols):
+    """Vectorized filtering once per query. Unassigned salespeople are references.
+
+    Reference stock respects model/color/owner/serial, but is not silently included
+    in the selected region's store quantity. No location is fabricated for sales.
+    """
+    mask = pd.Series(True, index=frame.index)
+    for key, column in [('models', cols['model']), ('colors', cols['color']),
+                        ('owners', cols['owner'])]:
+        selected = conditions.get(key) or []
+        if selected and column:
+            mask &= frame[column].astype(str).isin(selected)
+    serial = str(conditions.get('serial') or '').strip()
+    if serial:
+        if cols['serial']:
+            mask &= frame[cols['serial']].fillna('').astype(str).str.contains(serial, regex=False, na=False)
+        else:
+            mask &= False
+    sales = _inv_sales_mask(frame[cols['owner']])
+    zone = frame.get('대분류_캐시', pd.Series('미분류', index=frame.index)).fillna('미분류')
+    region_mask = pd.Series(True, index=frame.index)
+    zones = conditions.get('dae') or []
+    if zones:
+        region_mask &= zone.isin(zones)
+    small = conditions.get('so') or []
+    if small:
+        so = frame.get('소분류_캐시', pd.Series('미분류', index=frame.index))
+        unknown = frame.get('소분류_유추불가', pd.Series(False, index=frame.index)).fillna(False)
+        so_mask = so.isin(small) | unknown
+        if '집단상가' in small:
+            so_mask |= zone.eq('집단상가')
+        region_mask &= so_mask
+    matched = frame.loc[mask & region_mask].copy()
+    # Only unassigned salespeople excluded by area filters are supplementary.
+    unassigned = zone.astype(str).isin(['', '미분류', 'nan', 'None', '<NA>'])
+    reference = frame.loc[mask & sales & unassigned & ~region_mask].copy()
+    return matched, reference
+
+
+def _inv_payload(matched, reference, cols, conditions, version, tile_url):
+    """Compact arrays instead of pre-rendered HTML for every store popup."""
+    import math
+    buckets = {}
+    sales_mask = _inv_sales_mask(matched[cols['owner']])
+    stores = matched.loc[~sales_mask]
+    grouped_inputs = [(stores, 'store', False), (matched.loc[sales_mask], 'sales', False),
+                      (reference, 'sales', True)]
+    for data, category, is_reference in grouped_inputs:
+        item_cols = [cols.get(k) for k in ('model', 'color', 'kind', 'status', 'target', 'serial')]
+        field_cols = [cols['owner'], *item_cols, '대분류_캐시', 'cached_lat', 'cached_lon',
+                      '사업장주소', '위치표시방식', '추정지역', 'K노트 연락처']
+        selected = data.reindex(columns=[c or '__missing__' for c in field_cols])
+        # One tuple pass; no per-owner dataframe copies, apply(), or numeric casts.
+        for row in selected.itertuples(index=False, name=None):
+            name = _inv_text(row[0]) or '보유처 미등록'
+            key = (name, category, is_reference)
+            if key not in buckets:
+                buckets[key] = dict(items=[], zones={}, addresses={}, phones={}, guesses={}, modes=set(), lat=None, lon=None)
+            b = buckets[key]
+            b['items'].append([_inv_text(v) for v in row[1:7]])
+            b['zones'][_inv_text(row[7]) or '미분류'] = None
+            for field, index in [('addresses',10), ('guesses',12), ('phones',13)]:
+                value = _inv_text(row[index])
+                if value:
+                    b[field][value] = None
+            b['modes'].add(_inv_text(row[11]))
+            if category == 'store' and b['lat'] is None:
+                try:
+                    lat, lon = float(row[8]), float(row[9])
+                    if math.isfinite(lat) and math.isfinite(lon) and -90<=lat<=90 and -180<=lon<=180 and lat!=0 and lon!=0:
+                        b['lat'], b['lon'] = lat, lon
+                except (TypeError, ValueError):
+                    pass
+    records = []
+    for (name, category, is_reference), b in buckets.items():
+            items, zone_values = b['items'], list(b['zones'])
+            zone = zone_values[0] if len(zone_values) == 1 else '복수권역'
+            lat, lon = b['lat'], b['lon']
+            addresses = list(b['addresses'])
+            address = addresses[0] if addresses else ''
+            missing = address in ('', '미등록', '주소 미등록')
+            modes = b['modes']
+            approximate = '지역추정' in modes
+            guesses = list(b['guesses'])
+            if category == 'sales':
+                address_label = '영업사원 보유 · 위치 마커 제외'
+            elif approximate:
+                address_label = '추정 위치: ' + (' / '.join(guesses) or zone) + ' 인근'
+            else:
+                address_label = address if not missing else '주소 미등록'
+            phones = [v for v in b['phones'] if v not in ('미등록', '미확인')]
+            ident = hashlib.sha256((category + '\x1f' + name + '\x1f' + str(is_reference)).encode()).hexdigest()[:20]
+            records.append(dict(id=ident, name=name, category=category, reference=is_reference,
+                                zone=zone, lat=lat, lon=lon, address=address_label,
+                                missing=missing, approx=approximate, phone=' / '.join(phones) or '미등록',
+                                items=items, qty=len(items)))
+    return dict(version=version, records=records, conditions=conditions,
+                matched=len(matched), storeQty=len(stores), salesQty=int(sales_mask.sum()),
+                referenceQty=len(reference), tileUrl=tile_url,
+                created=datetime.now(timezone(timedelta(hours=9))).strftime('%m/%d %H:%M:%S'))
+
+
+@st.cache_resource
+def _inv_results_component():
+    import streamlit.components.v2 as components_v2
+    return components_v2.component('inventory_results_v3',
+                                  html='<div class="inventory-results-root"></div>',
+                                  css=_INV_RESULTS_CSS, js=_INV_RESULTS_JS)
+
+
+@st.fragment
+def _inv_dashboard(frame, file_version, tile_url):
+    from html import escape
+    cols = _inv_columns(frame)
+    if not cols['model'] or not cols['owner']:
+        st.error('재고표에서 모델명/보유처 열을 찾지 못했습니다. 기존 파일은 수정하지 않았습니다.')
+        return
+    option_key = ('inventory-ui-v3', file_version, frame.attrs.get('_db_revision'))
+    if st.session_state.get('_inv_option_key') != option_key:
+        def values(column):
+            return sorted({_inv_text(v) for v in frame[column].dropna().unique() if _inv_text(v)}) if column else []
+        present = values('대분류_캐시') if '대분류_캐시' in frame else []
+        zones = [v for v in CANONICAL_DAE if v in present] + [v for v in present if v not in CANONICAL_DAE]
+        st.session_state['_inv_options'] = dict(models=values(cols['model']), colors=values(cols['color']),
+                                                dae=zones, so=values('소분류_캐시') if '소분류_캐시' in frame else [],
+                                                owners=values(cols['owner']))
+        st.session_state['_inv_option_key'] = option_key
+        # Only the options are rebuilt; preserve the last query's filters across uploads.
+    options = st.session_state['_inv_options']
+    suffixes = dict(models='model', colors='color', dae='dae', so='so', owners='owner')
+    qp = dict(models='m', colors='c', dae='d')
+    for field, suffix in suffixes.items():
+        selected_key = 'filter_selected_' + field
+        if selected_key not in st.session_state:
+            st.session_state[selected_key] = list(st.query_params.get_all(qp[field])) if field in qp else []
+        if not isinstance(st.session_state[selected_key], list):
+            st.session_state[selected_key] = []
+        selected = [v for v in st.session_state[selected_key] if v in options[field]]
+        st.session_state[selected_key] = selected
+        widget = 'filter_multiselect_' + suffix + '_0'
+        # Rehydrate before the widget is mounted. Mirror values survive collapsed UI.
+        if st.session_state.get(widget) != selected:
+            st.session_state[widget] = selected
+    st.session_state.setdefault('filter_serial_query', '')
+    if st.session_state.get('_inv_serial_restore') is not None:
+        st.session_state['filter_serial_query'] = st.session_state.pop('_inv_serial_restore')
+
+    def commit(field):
+        widget = 'filter_multiselect_' + suffixes[field] + '_0'
+        st.session_state['filter_selected_' + field] = list(st.session_state.get(widget, []))
+        st.session_state['_recovery_fresh'] = False
+
+    def picker(field, label):
+        return st.multiselect(label, options[field], key='filter_multiselect_' + suffixes[field] + '_0',
+                              placeholder='전체', on_change=commit, args=(field,))
+
+    _inv_source_header()
+    with st.container(key='inv_primary_filters'):
+        a, b, c = st.columns([1.5, 1, 1.2], gap='small')
+        with a:
+            picker('models', '모델')
+        with b:
+            picker('colors', '색상')
+        with c:
+            picker('dae', '권역')
+    selected_labels = [v for f in ('models', 'colors', 'dae')
+                       for v in st.session_state.get('filter_selected_' + f, [])]
+    if selected_labels:
+        st.caption('선택 · ' + ' / '.join(selected_labels))
+    with st.expander('상세조건', expanded=False):
+        picker('so', '지역(소분류)')
+        picker('owners', '보유처')
+        st.text_input('일련번호 · 부분검색', key='filter_serial_query', placeholder='전체 번호 또는 일부 입력',
+                      disabled=not bool(cols['serial']))
+        if not cols['serial']:
+            st.caption('이 재고표에는 일련번호 열이 없습니다.')
+    draft = {field: list(st.session_state['filter_selected_' + field]) for field in suffixes}
+    draft['serial'] = st.session_state.get('filter_serial_query', '').strip()
+    with st.container(key='inv_query_actions'):
+        left, right = st.columns([3, 1], gap='small')
+    with left:
+        requested = st.button('조회하기', key='inventory_search_button', type='primary', use_container_width=True,
+                              disabled=not (draft['models'] or draft['owners'] or draft['serial']))
+    with right:
+        st.button('조건 초기화', key='inventory_reset_filters', on_click=reset_inventory_filters,
+                  use_container_width=True)
+    st.markdown('<div id="inventory-connection-status" role="status" aria-live="polite" hidden></div>',
+                unsafe_allow_html=True)
+    pending = st.session_state.pop('_inv_pending_query', None)
+    if isinstance(pending, dict):
+        draft = pending
+        requested = True
+    # Another user can upload a new inventory while this fragment stays alive.
+    # Check only metadata on query; reload once rather than searching stale data.
+    inventory_path = globals().get('DATA_FILE')
+    if requested and '_db_revision' in frame.attrs and frame.attrs['_db_revision'] != _db_revision():
+        st.session_state['_inv_pending_query'] = draft
+        st.rerun(scope='app')
+    if requested and inventory_path and os.path.exists(inventory_path):
+        current_stat = os.stat(inventory_path)
+        if (current_stat.st_mtime_ns, current_stat.st_size) != file_version:
+            st.session_state['_inv_pending_query'] = draft
+            st.rerun(scope='app')
+    if requested:
+        if not draft['models'] and not draft['owners'] and not draft['serial']:
+            st.warning('모델명·보유처·일련번호 중 하나 이상을 입력하세요. 이전 결과는 유지됩니다.')
+        else:
+            st.session_state['_last_search_conditions'] = draft
+            st.session_state['_inv_payload_key'] = None
+            st.session_state['_recovery_fresh'] = False
+            for field, param in qp.items():
+                if draft[field]:
+                    st.query_params[param] = draft[field]
+                elif param in st.query_params:
+                    del st.query_params[param]
+    last = st.session_state.get('_last_search_conditions')
+    if last is not None:
+        normalized_last = {f: list(last.get(f) or []) for f in suffixes}
+        normalized_last['serial'] = str(last.get('serial') or '')
+        if draft != normalized_last:
+            st.caption('조건이 변경됐습니다. 아래 결과는 이전 조회 기준이며, 조회하면 적용됩니다.')
+    st.session_state.pop('_restore_last_result', None)
+    if last is not None:
+        # A restored browser payload is untrusted data: keep only known filter types.
+        valid = all(isinstance(last.get(f, []), list) and all(isinstance(v, str) for v in last.get(f, []))
+                    for f in suffixes) and isinstance(last.get('serial', ''), str)
+        if not valid:
+            st.warning('저장된 검색조건을 복원하지 못했습니다. 다시 조회해주세요.')
+            return
+        signature = hashlib.sha256(json.dumps([file_version, frame.attrs.get('_db_revision'), last], ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        if st.session_state.get('_inv_payload_key') != signature:
+            matched, reference = _inv_filter(frame, last, cols)
+            st.session_state['_inv_payload'] = _inv_payload(matched, reference, cols, last, signature, tile_url)
+            st.session_state['_inv_payload_key'] = signature
+        _inv_results_component()(key='inventory_results_v3', data=st.session_state['_inv_payload'])
+    else:
+        _inv_results_component()(key='inventory_results_v3', data={'version':'empty', 'records':[], 'empty':True})
+    user = escape(str(st.session_state.get('username', '')))
+    st.markdown('<div class="inv-footer"><span>DB 캐시 사용 · 갱신 버튼으로 재확인</span><span>'+user+'</span></div>', unsafe_allow_html=True)
+
+
+_INV_FILTER_CSS = """<style>
+.stApp{background:#f4f7f3!important;background-image:none!important;color:#294a3c!important}
+header[data-testid="stHeader"]{background:#f4f7f3!important}
+.stApp :is(.stMarkdown,.stText,p,span,label,h1,h2,h3,h4,h5,h6,li){color:#294a3c!important}
+.stApp .block-container{max-width:820px!important;padding-top:3.5rem!important;padding-bottom:1.4rem!important}
+.stApp section[data-testid="stSidebar"]{background:#edf3ed!important;border-color:#cfdacf!important}
+div[data-baseweb="select"]>div,div[data-baseweb="base-input"]>input,div[data-testid="stTextInput"] input{background:#fff!important;color:#294a3c!important;border:1px solid #cbd7ca!important;border-radius:6px!important}
+div[data-baseweb="select"] input{color:#294a3c!important;-webkit-text-fill-color:#294a3c!important}
+div[data-baseweb="select"]>div>div>div{color:#5d7467!important}
+input::placeholder,textarea::placeholder{color:#738579!important;opacity:1!important}
+div[data-baseweb="popover"]>div,div[data-baseweb="popover"]>div>div,div[data-baseweb="popover"] ul,ul[role="listbox"],div[role="listbox"]{background:#fff!important;border-color:#cbd7ca!important}
+div[data-baseweb="popover"] :is(div,span,li),div[role="listbox"] :is(span,div){color:#294a3c!important}
+li[role="option"]{background:#fff!important;color:#294a3c!important}
+li[role="option"]:hover,li[role="option"][aria-selected="true"]{background:#e7eee3!important;color:#294a3c!important}
+.stApp span[data-baseweb="tag"]{background:#e6eddf!important;color:#294a3c!important;border:1px solid #c6d2bf!important}
+.stApp div.stButton>button,.stApp div[data-testid="stFormSubmitButton"]>button{background:#edf2e9!important;color:#365142!important;border:1px solid #ccd6c8!important;box-shadow:none!important}
+.stApp [data-testid="stFileUploadDropzone"]{background:#edf2e9!important;border:1px dashed #bccbb9!important}
+.stApp [data-testid="stFileUploadDropzone"] *{color:#365142!important}
+.stApp [data-testid="stFileUploadDropzone"] svg{fill:#365142!important}
+.stApp hr{background:#cbd7ca!important;height:1px!important}
+.stApp [data-testid="stExpander"]{border:0!important;border-radius:0!important;background:transparent!important}
+.stApp [data-testid="stExpander"] summary{padding:4px 0!important;min-height:36px!important}
+.stApp [data-testid="stExpander"] summary p{font-size:13px!important}
+.inv-brand{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0 13px;border-bottom:1px solid #cbd7ca;margin-bottom:2px;font-family:Arial,"Malgun Gothic",sans-serif;font-size:18px}
+.inv-file-heading{min-width:0;flex:1;display:grid;gap:3px}
+.stApp .inv-file-label{font-size:11px!important;color:#718575!important}
+.stApp .inv-file-name{display:block;color:#294a3c!important;font-size:16px;font-weight:500;line-height:1.45;overflow-wrap:anywhere;word-break:break-word}
+.stApp section[data-testid="stSidebar"] strong{color:#294a3c!important}
+.stApp .inv-brand #inv-connection-badge{font-size:12px!important;color:#287d53!important;white-space:nowrap}
+.stApp section[data-testid="stSidebar"] [data-testid="stRadio"]{margin-top:0!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label{border-radius:7px;padding:7px 8px;margin:2px 0}
+.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked){background:#e1ead8!important;border-left:3px solid #998347}
+.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked)>div:first-child{background:#998347!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked)>div:first-child>div{background:#f8faf5!important}
+.stApp section[data-testid="stSidebar"] hr{margin:12px 0!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] :is(div,section){background:#edf3ed!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] button{background:#f8faf5!important;color:#365142!important;border:1px solid #bccbb9!important;box-shadow:none!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stFileUploader"] button :is(p,span){color:#365142!important}
+.stApp section[data-testid="stSidebar"] [data-testid="stAlert"]{background:#e4eedf!important;border:1px solid #c9d9c3!important}
+.stApp [data-testid="stExpanderDetails"]{background:#f4f7f3!important;color:#294a3c!important}
+.stApp div[data-testid="stForm"]{background:#fbfcf9!important;border:1px solid #cbd7ca!important;box-shadow:none!important;border-radius:12px!important;padding:20px!important}
+.stApp .title-text{font-size:25px!important;font-weight:500!important;color:#294a3c!important;letter-spacing:0!important;margin:8px 0!important}
+.stApp .subtitle-text{font-size:13px!important;color:#6b7e6e!important;margin-bottom:18px!important}
+.st-key-inv_login_shell{max-width:420px!important;margin:20px auto!important}
+.stApp .logo-container img{max-width:130px!important}
+.stApp div[data-testid="stFormSubmitButton"]>button[data-testid]{background:#8d7837!important;border:1px solid #8d7837!important;border-radius:7px!important;box-shadow:none!important}
+.stApp [data-testid="stFormSubmitButton"]>button p{color:#fff!important;font-weight:400!important}
+.stApp .inv-auth-wait{background:#fbfcf9!important;border:1px solid #cbd7ca!important;box-shadow:0 4px 18px #294a3c12!important;padding:24px!important;width:min(360px,90vw)!important}
+.stApp .inv-auth-wait h3{font-size:18px!important;color:#826a2c!important}
+.inv-footer{border-top:1px solid #cbd7ca;padding-top:10px;margin-top:16px;display:flex;justify-content:space-between;gap:12px;font-size:11px}
+.st-key-inv_file_meta [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;align-items:center!important}
+.st-key-inv_file_meta [data-testid="stColumn"]:first-child{min-width:0!important;flex:5 1 0!important;width:0!important}
+.st-key-inv_file_meta [data-testid="stColumn"]:last-child{min-width:78px!important;flex:1 1 0!important;width:0!important}
+.st-key-inv_refresh_sources div.stButton>button[data-testid]{background:transparent!important;border:0!important;padding:4px!important;min-height:32px!important;box-shadow:none!important}
+.st-key-inv_refresh_sources button p{font-size:12px!important}
+.st-key-inv_primary_filters [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:6px!important}
+.st-key-inv_primary_filters [data-testid="stColumn"],.st-key-inv_primary_filters [data-testid="column"]{min-width:0!important;flex:1 1 0!important;width:0!important}
+.st-key-inv_primary_filters [data-testid="stColumn"]:first-child{flex-grow:1.5!important}
+.st-key-inv_primary_filters [data-testid="stColumn"]:nth-child(2){flex-grow:.8!important}
+.st-key-inv_primary_filters [data-testid="stColumn"]:last-child{flex-grow:1.3!important}
+.st-key-inv_primary_filters label p{font-size:13px!important}
+.st-key-inv_primary_filters [data-baseweb="select"]>div{padding-left:5px!important;padding-right:3px!important;min-height:40px!important}
+.st-key-inv_primary_filters [data-baseweb="tag"]{max-width:100%!important;font-size:12px!important}
+.st-key-inv_primary_filters [data-baseweb="tag"] span[title]{font-size:12px!important}
+.st-key-inv_primary_filters [aria-label="Clear all"]{display:none!important}
+.st-key-inv_query_actions [data-testid="stHorizontalBlock"]{flex-wrap:nowrap!important;gap:8px!important}
+.st-key-inv_query_actions [data-testid="stColumn"]{min-width:0!important;flex:3 1 0!important;width:0!important}
+.st-key-inv_query_actions [data-testid="stColumn"]:last-child{flex-grow:1!important}
+.st-key-inventory_reset_filters div.stButton>button[data-testid]{background:transparent!important;color:#506b5b!important;border:0!important;font-size:12px!important;min-height:40px!important;padding:4px!important;box-shadow:none!important}
+.st-key-inventory_reset_filters button p{font-size:12px!important}
+.st-key-inventory_search_button div.stButton>button[data-testid]{background:#8d7837!important;color:#fff!important;border:1px solid #8d7837!important;min-height:40px!important;padding:6px!important;box-shadow:none!important}
+.st-key-inventory_search_button div.stButton>button[data-testid] p{color:#fff!important;font-weight:400!important;font-size:14px!important}
+.st-key-inventory_search_button div.stButton>button[data-testid]:disabled{background:#b6aa81!important;border-color:#b6aa81!important;opacity:1!important}
+#inventory-connection-status{background:#eef0df;color:#705e29;padding:9px;border-radius:6px;font-size:13px}
+@media(max-width:640px){
+ .st-key-inv_primary_filters [data-testid="stHorizontalBlock"]{flex-direction:column!important;gap:2px!important;align-items:stretch!important}
+ .st-key-inv_primary_filters [data-testid="stColumn"]:nth-child(n),
+ .st-key-inv_primary_filters [data-testid="column"]:nth-child(n){width:100%!important;min-width:0!important;flex:0 0 auto!important;padding:0!important}
+ .st-key-inv_primary_filters [data-testid="stVerticalBlock"]{gap:0!important}
+ .st-key-inv_primary_filters [data-testid="stElementContainer"]{margin:0!important;padding:0!important}
+ .st-key-inv_primary_filters [data-testid="stWidgetLabel"]{margin-bottom:0!important;min-height:18px!important;padding:0!important}
+ .st-key-inv_primary_filters [data-testid="stWidgetLabel"] p{margin:0!important;line-height:18px!important}
+}
+
+.stApp .st-key-inv_admin_shell h2{font-size:23px!important;font-weight:500!important;padding:6px 0!important}
+.stApp .st-key-inv_admin_shell h3,.stApp .st-key-inv_admin_shell h4{font-size:17px!important;font-weight:500!important;padding:8px 0!important}
+.stApp .st-key-inv_admin_shell [data-baseweb="tab-list"]{background:transparent!important;gap:0!important;border-bottom:1px solid #cbd7ca!important}
+.stApp .st-key-inv_admin_shell [data-baseweb="tab"]{background:transparent!important;flex:1 1 0!important;padding:10px 6px!important;min-height:44px!important;white-space:nowrap!important}
+.stApp .st-key-inv_admin_shell [data-baseweb="tab"][aria-selected="true"]{background:#e7eee1!important}
+.stApp .st-key-inv_admin_shell [data-baseweb="tab-highlight"]{background:#8d7837!important}
+.stApp .st-key-inv_admin_shell [data-baseweb="tab"] p{font-size:13px!important}
+.stApp .st-key-inv_admin_shell [data-testid="stVerticalBlockBorderWrapper"]>div{border-color:#cbd7ca!important;border-radius:10px!important}
+.stApp .st-key-inv_admin_shell [data-testid="stAlert"]{background:#edf2e7!important;border:1px solid #ccd8c7!important;border-radius:7px!important}
+.stApp .st-key-inv_admin_shell [data-testid="stFileUploader"] button{background:#f8faf5!important;color:#365142!important;border:1px solid #bccbb9!important;box-shadow:none!important}
+.stApp .st-key-inv_admin_shell [data-testid="stFileUploader"] button :is(p,span){color:#365142!important}
+.stApp .st-key-inv_admin_shell [data-testid="stExpander"]{border-bottom:1px solid #cbd7ca!important;padding:4px 0!important}
+@media(max-width:640px){.stApp .st-key-inv_admin_shell [data-testid="stHorizontalBlock"]{flex-direction:column!important;gap:8px!important}.stApp .st-key-inv_admin_shell [data-testid="stColumn"]{width:100%!important;min-width:0!important;flex:1 1 auto!important}.stApp .st-key-inv_admin_shell div[data-testid="stForm"]{padding:14px!important}}
+
+</style>"""
+
+_INV_RESULTS_JS = 'export default function({data, parentElement}) {\n    const root = parentElement.querySelector(\'.inventory-results-root\');\n    if (!root) return;\n    const storageKey = \'banchu-view-v3:\' + location.pathname;\n    let state = root._inventory;\n    if (!state) {\n        let saved = {};\n        try { saved = JSON.parse(sessionStorage.getItem(storageKey)) || {}; } catch (_) {}\n        state = root._inventory = {version:null, view:saved.view===\'list\'?\'list\':\'map\',\n            zone:\'\', page:0, sort:saved.sort||\'name\', selected:\'\', markers:new Map(), map:null,\n            epoch:0, repsOpen:false, detailPages:new Map(), data:null};\n    }\n    const persist = () => {\n        try {sessionStorage.setItem(storageKey,JSON.stringify({view:state.view,sort:state.sort}));}catch(_){}\n    };\n    if (state.version === data.version) return; // Filter edits / recovery never rebuild this map.\n    const previous = state.data;\n    state.version=data.version;state.data=data;state.epoch++;\n    if (previous && !data.empty && JSON.stringify(previous.conditions)!==JSON.stringify(data.conditions)) {\n        state.zone=\'\';state.page=0;state.selected=\'\';state.detailPages.clear();\n    }\n    if (data.empty) {\n        if(state.map)state.map.remove();state.map=null;state.markers.clear();\n        root.replaceChildren();const note=document.createElement(\'div\');note.className=\'iv-empty\';note.textContent=\'⌕  모델·보유처·일련번호 중 하나로 조회하세요\';root.append(note);return;\n    }\n    const records=data.records, stores=records.filter(r=>r.category===\'store\'), reps=records.filter(r=>r.category===\'sales\');\n    const direct=!!data.conditions.dae?.length;\n    if (direct) state.zone=\'\';\n    const validPoint=r=>Number.isFinite(r.lat)&&Number.isFinite(r.lon);\n    const fmt=n=>Number(n).toLocaleString(\'ko-KR\');\n    const escape=s=>String(s??\'\').replace(/[&<>"\']/g,c=>({\'&\':\'&amp;\',\'<\':\'&lt;\',\'>\':\'&gt;\',\'"\':\'&quot;\',"\'":\'&#39;\'}[c]));\n    const elem=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};\n    const button=(text,fn,cls=\'iv-button\')=>{const b=elem(\'button\',cls,text);b.type=\'button\';b.addEventListener(\'click\',fn);return b;};\n    const visibleStores=()=>stores.filter(r=>!state.zone||r.zone===state.zone);\n    // Keep the component shell and Leaflet map element stable on refreshed payloads.\n    if (!root.querySelector(\'.iv-shell\')) {\n        root.innerHTML=`<section class="iv-shell">\n          <header class="iv-heading"><div><span class="iv-muted">조회 결과</span><div class="iv-total"></div></div><span class="iv-time iv-muted"></span></header>\n          <div class="iv-conditions iv-muted"></div><div class="iv-counts iv-muted"></div>\n          <section class="iv-sales" aria-label="영업사원 보유 재고"><div class="iv-sales-head"></div><div class="iv-sales-body" hidden></div></section>\n          <nav class="iv-tabs" aria-label="결과 보기"><button type="button" data-view="map">지도</button><button type="button" data-view="list">목록</button></nav>\n          <div class="iv-scope"></div>\n          <div class="iv-map-panel"><div class="iv-map-status iv-muted" role="status"></div><div class="iv-map" aria-label="재고 지도"></div><div class="iv-zone-buttons"></div><p class="iv-map-note iv-muted"></p></div>\n          <div class="iv-list-panel" hidden><div class="iv-list-controls"><span class="iv-range iv-muted"></span><label>정렬 <select class="iv-sort"><option value="name">보유처명</option><option value="qty">수량 많은 순</option><option value="date">출고일 빠른 순</option></select></label></div><div class="iv-list"></div><div class="iv-pager"></div></div>\n          <section class="iv-detail" aria-label="선택 거래처 상세" hidden></section>\n          <div class="iv-feedback" role="status" aria-live="polite"></div>\n        </section>`;\n    }\n    const q=s=>root.querySelector(s);\n    q(\'.iv-total\').textContent=fmt(data.matched)+\'대\';q(\'.iv-time\').textContent=data.created+\' 조회\';\n    q(\'.iv-counts\').textContent=`거래처 ${fmt(data.storeQty)}대 · 영업사원 ${fmt(data.salesQty)}대`+\n        (data.referenceQty?` · 권역 미지정 참고 ${fmt(data.referenceQty)}대 별도`:\'\');\n    q(\'.iv-conditions\').textContent=[...(data.conditions.models||[]),...(data.conditions.colors||[]),\n        ...(data.conditions.dae?.length?data.conditions.dae:[\'전체 권역\']),...(data.conditions.so||[]),\n        ...(data.conditions.owners||[]),data.conditions.serial?\'일련번호 포함: \'+data.conditions.serial:\'\'].filter(Boolean).join(\' · \');\n    let feedbackTimer;\n    function feedback(text){q(\'.iv-feedback\').textContent=text;clearTimeout(feedbackTimer);feedbackTimer=setTimeout(()=>{if(root.isConnected)q(\'.iv-feedback\').textContent=\'\';},3500);}\n    function stockSummary(r){\n        const map=new Map();for(const item of r.items){const key=JSON.stringify(item.slice(0,5));const value=map.get(key);if(value)value.qty++;else map.set(key,{values:item.slice(0,5),qty:1});}return [...map.values()];\n    }\n    function dateParts(value){\n        const raw=String(value??\'\').trim();\n        const match=raw.match(/^(\\d{4})[-/.]?(\\d{2})[-/.]?(\\d{2})$/);\n        if(!match)return null;\n        const [,year,month,day]=match;\n        const date=new Date(Number(year),Number(month)-1,Number(day));\n        return date.getFullYear()===Number(year)&&date.getMonth()===Number(month)-1&&date.getDate()===Number(day)?[year,month+day]:null;\n    }\n    async function copy(text){\n        try{await navigator.clipboard.writeText(text);feedback(\'재고요청 문구를 복사했습니다.\');return true;}\n        catch(_){const area=elem(\'textarea\');area.value=text;root.append(area);area.select();let ok=false;try{ok=document.execCommand(\'copy\');}catch(_){}area.remove();feedback(ok?\'재고요청 문구를 복사했습니다.\':\'자동 복사가 제한돼 있습니다. 아래 문구를 길게 눌러 복사하세요.\');return ok;}\n    }\n    async function shareText(text,copyArea){\n        // Invoke inside the real click, before any asynchronous work, so mobile\n        // browsers retain user activation. This is the OS share sheet, not an SDK.\n        copyArea.value=text;\n        if(window.isSecureContext&&typeof navigator.share===\'function\'){\n            try{\n                if(!navigator.canShare||navigator.canShare({text})){\n                    feedback(\'공유창에서 카카오톡을 선택하세요.\');\n                    await navigator.share({text});\n                    feedback(\'공유창 처리가 완료됐습니다.\');return;\n                }\n            }catch(error){if(error.name===\'AbortError\'){feedback(\'공유를 취소했습니다.\');return;}}\n        }\n        copyArea.hidden=false;const copied=await copy(text);\n        feedback(copied?\'이 환경에서는 공유창을 열 수 없어 문구를 복사했습니다. 카카오톡에 붙여넣으세요.\':\'이 환경에서는 공유창을 열 수 없습니다. 아래 문구를 길게 눌러 복사하세요.\');\n    }\n    function detail(r, popup=false){\n        const wrap=elem(\'div\',\'iv-store-detail\'),title=elem(\'div\',\'iv-detail-title\',r.name+(r.missing&&r.category===\'store\'?\' · 주소 미등록\':\'\'));wrap.append(title);\n        wrap.append(elem(\'div\',\'iv-address\',(r.category===\'store\'?\'📍 \':\'\')+r.address));\n        wrap.append(elem(\'div\',\'iv-address iv-phone\',\'☎ K노트 연락처 : \'+r.phone));\n        const memo=elem(\'input\',\'iv-memo\');memo.placeholder=\'이동할 곳 · 이동예정입니다\';memo.setAttribute(\'aria-label\',\'이동 예정 장소\');\n        const summary=stockSummary(r), lines=[\'반추 재고요청드립니다\',\'\',`[${r.name}]`];\n        if(r.category===\'store\')lines.push(\'📍 \'+r.address);else lines.push(\'영업사원 보유 재고\');\n        lines.push(\'☎ K노트 연락처 : \'+r.phone,\'\');\n        summary.forEach(v=>lines.push(v.values[0]+\' | \'+(v.values[1]||\'-\')+\' | \'+v.qty+\'대\'));\n        lines.push(\'\',\'사용가능할까요?\');\n        const copyArea=elem(\'textarea\',\'iv-copy-text\');copyArea.readOnly=true;copyArea.hidden=true;copyArea.setAttribute(\'aria-label\',\'복사 문구\');\n        const message=()=>lines.join(\'\\n\')+(memo.value.trim()?\'\\n\'+memo.value.trim()+\' 이동예정입니다.\':\'\');\n        const actions=elem(\'div\',\'iv-share-actions\');\n        actions.append(button(\'재고요청 복사\',()=>{const text=message();copyArea.value=text;copyArea.hidden=false;copy(text);}),\n            button(\'카카오톡 공유\',()=>shareText(message(),copyArea),\'iv-button iv-share-button\'));\n        const shareTools=elem(\'details\',\'iv-share-tools\');\n        shareTools.append(elem(\'summary\',\'\',\'재고요청 복사 · 공유\'),memo,actions,elem(\'div\',\'iv-muted iv-share-hint\',\'휴대폰 공유창에서 카카오톡을 선택하세요.\'),copyArea);\n        const table=elem(\'table\',\'iv-stock-table\'),thead=elem(\'thead\'),tr=elem(\'tr\');\n        [\'모델\',\'색상\',\'유형\',\'상태\',\'출고일\',\'수량\'].forEach(v=>tr.append(elem(\'th\',\'\',v)));thead.append(tr);table.append(thead);\n        wrap.append(elem(\'div\',\'iv-stock-heading\',`재고현황 · 총 ${fmt(r.qty)}대`));\n        const body=elem(\'tbody\');const perPage=popup?8:15;const pageKey=r.id+(popup?\':popup\':\':panel\');let page=state.detailPages.get(pageKey)||0;\n        page=Math.min(page,Math.max(0,Math.ceil(summary.length/perPage)-1));\n        summary.slice(page*perPage,(page+1)*perPage).forEach(v=>{const row=elem(\'tr\');[...v.values,v.qty].forEach((value,index)=>{\n            const cell=elem(\'td\');const parts=index===4?dateParts(value):null;\n            if(parts){cell.className=\'iv-date\';cell.setAttribute(\'aria-label\',`${parts[0]}년 ${parts[1].slice(0,2)}월 ${parts[1].slice(2)}일`);parts.forEach(part=>cell.append(elem(\'span\',\'\',part)));}\n            else cell.textContent=String(value||\'-\');\n            row.append(cell);\n        });body.append(row);});table.append(body);wrap.append(table);\n        if(summary.length>perPage){const drawPage=next=>{state.detailPages.set(pageKey,next);if(popup)wrap.replaceWith(detail(r,true));else showDetail(r);};const nav=elem(\'div\',\'iv-pager\');nav.append(button(\'이전\',()=>drawPage(Math.max(0,page-1))),elem(\'span\',\'iv-muted\',`${page+1}/${Math.ceil(summary.length/perPage)}`),button(\'다음\',()=>drawPage(Math.min(Math.ceil(summary.length/perPage)-1,page+1))));wrap.append(nav);}\n        if(!popup){const serials=elem(\'details\'),label=elem(\'summary\',\'\',`일련번호 및 개별 재고 ${fmt(r.qty)}대`);serials.append(label);\n            // No unit DOM until the user asks for serial detail. Paginate, never truncate.\n            serials.addEventListener(\'toggle\',()=>{if(!serials.open||serials.dataset.ready)return;serials.dataset.ready=\'1\';let unitPage=0;const host=elem(\'div\');serials.append(host);\n                const draw=()=>{host.replaceChildren();r.items.slice(unitPage*20,(unitPage+1)*20).forEach(a=>host.append(elem(\'div\',\'iv-unit\',`${a[0]} | ${a[1]||\'-\'} | ${a[2]||\'-\'} | ${a[3]||\'-\'} | ${a[4]||\'-\'} | 일련: ${a[5]||\'-\'}`)));\n                    const nav=elem(\'div\',\'iv-pager\'),prev=button(\'이전\',()=>{unitPage--;draw();}),next=button(\'다음\',()=>{unitPage++;draw();});prev.disabled=unitPage===0;next.disabled=(unitPage+1)*20>=r.items.length;nav.append(prev,elem(\'span\',\'iv-muted\',`${unitPage+1}/${Math.max(1,Math.ceil(r.items.length/20))}`),next);host.append(nav);};draw();});wrap.append(serials);}\n        wrap.append(shareTools);\n        return wrap;\n    }\n    function showDetail(r){\n        state.selected=r.id;const host=q(\'.iv-detail\');host.hidden=false;host.replaceChildren();host.append(button(\'상세 닫기\',()=>{state.selected=\'\';host.hidden=true;renderList();},\'iv-text-button\'),detail(r));\n        for(const [id,marker] of state.markers){if(marker.setStyle)marker.setStyle({weight:id===r.id?4:2,radius:id===r.id?10:7});}\n        renderList();\n    }\n    function renderSales(){\n        const head=q(\'.iv-sales-head\'),body=q(\'.iv-sales-body\');head.replaceChildren();body.replaceChildren();\n        head.append(button(`영업사원 보유 ${fmt(reps.reduce((n,r)=>n+r.qty,0))}대 · ${reps.length}명 ${state.repsOpen?\'접기\':\'펼치기\'}`,()=>{state.repsOpen=!state.repsOpen;renderSales();},\'iv-sales-toggle\'));\n        body.hidden=!state.repsOpen;\n        if(!state.repsOpen)return;\n        body.append(elem(\'p\',\'iv-muted\',\'위치 마커 제외 · 모델/색상/보유처/일련번호 조건 적용. 권역 미지정 참고 재고는 거래처 집계에 포함하지 않습니다.\'));\n        if(!reps.length)body.append(elem(\'p\',\'iv-muted\',\'해당 조건의 영업사원 재고가 없습니다.\'));\n        reps.forEach(r=>body.append(button(`${r.name} · ${fmt(r.qty)}대${r.reference?\' · 권역 미지정 참고\':\'\'}`,()=>showDetail(r),\'iv-sales-row\')));\n    }\n    function renderList(revealSelected=false){\n        const rows=visibleStores().slice();\n        const earliest=r=>r.items.map(v=>v[4]).filter(Boolean).sort()[0]||\'9999\';\n        rows.sort(state.sort===\'qty\'?(a,b)=>b.qty-a.qty:state.sort===\'date\'?(a,b)=>earliest(a).localeCompare(earliest(b)):(a,b)=>a.name.localeCompare(b.name,\'ko\'));\n        if(revealSelected){const index=rows.findIndex(r=>r.id===state.selected);if(index>=0)state.page=Math.floor(index/12);}\n        const pages=Math.max(1,Math.ceil(rows.length/12));state.page=Math.min(state.page,pages-1);\n        q(\'.iv-range\').textContent=rows.length?`${fmt(state.page*12+1)}–${fmt(Math.min(rows.length,(state.page+1)*12))} / ${fmt(rows.length)}개 거래처`:\'해당 거래처 없음\';\n        const host=q(\'.iv-list\');host.replaceChildren();rows.slice(state.page*12,(state.page+1)*12).forEach(r=>{\n            const b=button(\'\',()=>openStoreOnMap(r),\'iv-store-row\');b.setAttribute(\'aria-pressed\',String(r.id===state.selected));b.append(elem(\'strong\',\'\',r.name),elem(\'span\',\'iv-muted\',`${r.zone} · ${r.address}`),elem(\'span\',\'iv-qty\',fmt(r.qty)+\'대\'));host.append(b);});\n        q(\'.iv-sort\').value=state.sort;q(\'.iv-sort\').onchange=event=>{state.sort=event.target.value;state.page=0;persist();renderList();};\n        const pager=q(\'.iv-pager\');pager.replaceChildren();const prev=button(\'이전\',()=>{state.page--;renderList();}),next=button(\'다음\',()=>{state.page++;renderList();});prev.disabled=state.page===0;next.disabled=state.page===pages-1;pager.append(prev,elem(\'span\',\'iv-muted\',`${state.page+1}/${pages}`),next);\n    }\n    function scope(){const host=q(\'.iv-scope\');host.replaceChildren();host.append(elem(\'span\',\'iv-muted\',state.zone?state.zone:direct?data.conditions.dae.join(\' · \'):\'전체 권역 · 권역별 요약\'));\n        if(state.zone)host.append(button(\'전체 권역 요약\',()=>{state.zone=\'\';state.page=0;scope();renderList();updateMap();},\'iv-text-button\'));}\n    function switchView(view,fromUser=false){state.view=view;persist();q(\'.iv-map-panel\').hidden=view!==\'map\';q(\'.iv-list-panel\').hidden=view!==\'list\';root.querySelectorAll(\'[data-view]\').forEach(b=>b.setAttribute(\'aria-pressed\',String(b.dataset.view===view)));\n        if(view===\'map\')return ensureMap();\n        if(fromUser){renderList(true);requestAnimationFrame(()=>{if(state.view===\'list\')q(\'.iv-store-row[aria-pressed="true"]\')?.scrollIntoView({block:\'center\',behavior:\'auto\'});});}\n    }\n    function openMarkerDetail(r,marker){\n        showDetail(r);\n        marker.bindPopup(detail(r,true),{maxWidth:360,minWidth:260,maxHeight:Math.max(160,state.map.getSize().y-90),autoPan:true,autoPanPadding:[14,14],keepInView:true}).openPopup();\n    }\n    async function openStoreOnMap(r){\n        showDetail(r);\n        if(!validPoint(r)){feedback(\'좌표가 없어 지도에 표시할 수 없습니다. 아래 재고 상세를 확인하세요.\');q(\'.iv-detail\').scrollIntoView({block:\'start\',behavior:\'auto\'});return;}\n        if(!direct){state.zone=r.zone;scope();}\n        const epoch=state.epoch;\n        await switchView(\'map\');\n        if(epoch!==state.epoch||state.view!==\'map\'||state.selected!==r.id||!root.isConnected)return;\n        const marker=state.markers.get(r.id);\n        if(!marker){feedback(\'지도 연결을 확인한 뒤 다시 선택하세요.\');return;}\n        state.map.setView([r.lat,r.lon],Math.max(state.map.getZoom(),15),{animate:false});\n        openMarkerDetail(r,marker);\n        q(\'.iv-map-panel\').scrollIntoView({block:\'start\',behavior:\'auto\'});\n    }\n    root.querySelectorAll(\'[data-view]\').forEach(b=>{b.onclick=()=>switchView(b.dataset.view,true);});\n    function leaflet(){\n        if(window.L)return Promise.resolve(window.L);\n        if(window.__banchuLeaflet)return window.__banchuLeaflet;\n        window.__banchuLeaflet=new Promise((resolve,reject)=>{const script=document.createElement(\'script\');script.src=\'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\';script.onload=()=>resolve(window.L);script.onerror=()=>{window.__banchuLeaflet=null;reject(new Error(\'지도 라이브러리 연결 실패\'));};document.head.append(script);});return window.__banchuLeaflet;\n    }\n    let mapSignature=\'\';\n    async function ensureMap(){\n        const epoch=state.epoch;const status=q(\'.iv-map-status\');\n        if(!stores.some(validPoint)){status.textContent=\'표시할 거래처 좌표가 없습니다. 목록과 영업사원 영역은 계속 이용할 수 있습니다.\';if(state.layer)state.layer.clearLayers();state.markers.clear();q(\'.iv-zone-buttons\').replaceChildren();q(\'.iv-map-note\').textContent=\'좌표가 없는 거래처도 목록에서 확인할 수 있습니다.\';return;}\n        try{\n            status.textContent=state.map?\'\':\'지도 준비 중…\';const L=await leaflet();if(epoch!==state.epoch||!root.isConnected)return;\n            if(!root.querySelector(\'link[data-leaflet]\')){const css=elem(\'link\');css.rel=\'stylesheet\';css.href=\'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\';css.dataset.leaflet=\'1\';root.prepend(css);}\n            if(!state.map){\n                const node=q(\'.iv-map\');state.map=L.map(node,{scrollWheelZoom:false,preferCanvas:true,zoomControl:true,attributionControl:true}).setView([37.5,127],9);\n                L.tileLayer(data.tileUrl||\'https://tile.openstreetmap.org/{z}/{x}/{y}.png\',{attribution:data.tileUrl?\'VWorld\':\'© OpenStreetMap contributors\',maxZoom:19}).addTo(state.map);\n                state.layer=L.layerGroup().addTo(state.map);\n                state.map.on(\'click\',()=>{});\n                if(matchMedia(\'(pointer:coarse)\').matches){state.map.dragging.disable();state.map.touchZoom.disable();\n                    node.addEventListener(\'touchstart\',event=>{if(event.touches.length>1){state.map.dragging.enable();state.map.touchZoom.enable();}},{passive:true});\n                    node.addEventListener(\'touchend\',event=>{if(event.touches.length<2){state.map.dragging.disable();state.map.touchZoom.disable();}},{passive:true});}\n            }\n            await new Promise(resolve=>requestAnimationFrame(resolve));\n            if(epoch!==state.epoch||!root.isConnected)return;\n            state.map.invalidateSize({pan:false});status.textContent=\'\';updateMap();\n        }catch(_){status.replaceChildren(elem(\'span\',\'\',\'지도를 불러오지 못했습니다. 목록을 이용하거나 다시 시도하세요. \'),button(\'지도 재시도\',()=>ensureMap()));}\n    }\n    function updateMap(){\n        if(!state.map)return;\n        const signature=state.version+\'|\'+state.zone+\'|\'+direct;\n        if(mapSignature===signature)return;mapSignature=signature;\n        const L=window.L;state.layer.clearLayers();state.markers.clear();const bounds=[];\n        const host=q(\'.iv-zone-buttons\');host.replaceChildren();\n        if(!direct&&!state.zone){\n            const groups=new Map();stores.forEach(r=>{if(!groups.has(r.zone))groups.set(r.zone,[]);groups.get(r.zone).push(r);});\n            for(const [zone,group] of groups){\n                const qty=group.reduce((n,r)=>n+r.qty,0),valid=group.filter(validPoint);\n                const drill=()=>{state.zone=zone;state.page=0;scope();renderList();updateMap();};\n                host.append(button(`${zone} · ${fmt(qty)}대`,drill,\'iv-zone-button\'));\n                if(!valid.length)continue;\n                const median=a=>{a.sort((a,b)=>a-b);const n=a.length;return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2;};\n                const point=[median(valid.map(r=>r.lat)),median(valid.map(r=>r.lon))];bounds.push(point);\n                const icon=L.divIcon({className:\'iv-zone-marker\',html:`<span>${escape(zone)}</span><strong>${fmt(qty)}대</strong>`,iconSize:[100,50],iconAnchor:[50,25]});\n                L.marker(point,{icon,title:zone+\' 권역 요약\'}).on(\'click\',drill).addTo(state.layer);\n            }\n            q(\'.iv-map-note\').textContent=\'권역별 요약 마커는 대표 위치입니다. 마커 또는 권역 버튼을 누르면 거래처가 표시됩니다. 영업사원은 마커에서 제외합니다.\';\n        }else{\n            for(const r of visibleStores().filter(validPoint)){\n                const point=[r.lat,r.lon];bounds.push(point);\n                const marker=L.circleMarker(point,{radius:state.selected===r.id?10:7,color:r.approx||r.missing?\'#e14444\':\'#b28e32\',weight:state.selected===r.id?4:2,dashArray:r.approx||r.missing?\'4 3\':null,fillColor:\'#876b22\',fillOpacity:.85});\n                marker.bindTooltip(escape(r.name),{direction:\'top\'});marker.on(\'click\',()=>openMarkerDetail(r,marker));marker.addTo(state.layer);state.markers.set(r.id,marker);\n            }\n            q(\'.iv-map-note\').textContent=\'개별 거래처 마커 · 빨간 점선은 주소 미등록 또는 추정 위치입니다. 상세는 마커를 누를 때 준비합니다.\';\n        }\n        if(bounds.length)state.map.fitBounds(bounds,{padding:[30,30],maxZoom:bounds.length===1?15:12,animate:false});\n    }\n    renderSales();scope();renderList();switchView(state.view);\n    const selected=records.find(r=>r.id===state.selected);if(selected)showDetail(selected);else q(\'.iv-detail\').hidden=true;\n    // No Python callbacks for tabs, sorting, pages, sales expansion, or marker selection.\n    // Leave window scroll and focus untouched on query completion.\n    return ()=>queueMicrotask(()=>{if(!root.isConnected&&state.map){state.map.remove();state.map=null;}});\n}\n'
+_INV_RESULTS_CSS = '.inventory-results-root{font-family:Arial,"Malgun Gothic",sans-serif;color:#294a3c;font-size:14px;line-height:1.5;--iv-bg:#f4f7f3;--iv-panel:#edf3e9;--iv-border:#cbd7ca;--iv-muted:#627968;--iv-gold:#826a2c}\n*{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}[hidden]{display:none!important}\n.iv-shell{background:var(--iv-bg);padding:14px 0;overflow-wrap:anywhere}.iv-heading,.iv-sales-head,.iv-list-controls,.iv-scope,.iv-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}\n.iv-total{font-size:26px;font-weight:600}.iv-muted{color:var(--iv-muted);font-size:12px}.iv-conditions,.iv-counts{margin-top:5px}.iv-time{font-variant-numeric:tabular-nums}\n.iv-sales{background:var(--iv-panel);border-left:3px solid var(--iv-gold);margin:12px 0;padding:9px 12px}.iv-sales-toggle{background:transparent;border:0;color:var(--iv-gold);padding:0;text-align:left;font-weight:600;min-height:32px}.iv-sales-row{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--iv-border);padding:9px 0;color:inherit}\n.iv-tabs{display:flex;margin:12px 0 4px;border-bottom:1px solid var(--iv-border)}.iv-tabs button{width:50%;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--iv-muted);padding:10px}.iv-tabs button[aria-pressed=true]{border-color:var(--iv-gold);color:var(--iv-gold)}\n.iv-scope{font-size:12px;min-height:38px}.iv-text-button{background:transparent;border:0;color:var(--iv-gold);padding:7px 0}.iv-map{height:380px;background:#e5ede2;border-radius:8px;isolation:isolate}.iv-map-note{margin:8px 0}.iv-map-status:empty{display:none}.iv-zone-buttons{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.iv-zone-button{font-size:12px;padding:6px 9px;background:var(--iv-panel);color:inherit;border:1px solid var(--iv-border);border-radius:5px}\n.iv-zone-marker{background:#6f581b;color:#fff2c8;border:1px solid #d5bd75;border-radius:7px;text-align:center;padding:3px;box-shadow:0 2px 3px #0004}.iv-zone-marker span{display:block;font-size:11px}.iv-zone-marker strong{font-size:14px}\n.iv-list-controls{margin:9px 0}.iv-list-controls select{background:var(--iv-panel);color:inherit;border:1px solid var(--iv-border);padding:6px;border-radius:5px}.iv-list-controls label{font-size:12px}.iv-store-row{background:transparent;color:inherit;border:0;border-bottom:1px solid var(--iv-border);display:grid;grid-template-columns:minmax(0,1fr) auto;text-align:left;gap:3px 9px;width:100%;padding:11px 2px}.iv-store-row strong{font-size:13px;font-weight:500}.iv-store-row>.iv-muted{grid-column:1}.iv-qty{grid-column:2;grid-row:1 / 3;align-self:center;color:var(--iv-gold)}.iv-store-row[aria-pressed=true]{background:#e1ead9}.iv-pager{justify-content:center;margin:10px 0}\n.iv-button{background:#edf2e8;color:inherit;border:1px solid var(--iv-border);border-radius:6px;padding:7px 11px}.iv-detail{margin:12px 0;border-top:1px solid var(--iv-border);padding-top:9px}.iv-detail-title{font-size:14px;font-weight:600;margin:4px 0 7px}.iv-address{font-size:12px;font-weight:400;line-height:1.5}.iv-phone{border-bottom:1px solid var(--iv-border);padding-bottom:7px;margin-bottom:8px}.iv-memo,.iv-copy-text{width:100%;min-width:0;background:var(--iv-panel);color:inherit;border:1px solid var(--iv-border);padding:8px;border-radius:5px;margin-bottom:8px}.iv-copy-text{height:180px;margin-top:8px}.iv-stock-table{border-collapse:collapse;width:100%;font-size:11px;margin:8px 0;table-layout:fixed}.iv-stock-table th,.iv-stock-table td{border-bottom:1px solid var(--iv-border);text-align:left;padding:6px 3px;overflow-wrap:anywhere}.iv-stock-table th:first-child{width:26%}.iv-stock-table th:last-child{width:10%}.iv-unit{font-size:12px;border-bottom:1px solid var(--iv-border);padding:8px 0}.iv-feedback{color:#27724a;font-size:12px}.iv-feedback:empty{display:none}\n.leaflet-popup-content-wrapper{background:#fff;color:#222}.leaflet-popup-content .iv-store-detail{--iv-panel:#f4f7f4;--iv-border:#d1dad3;--iv-muted:#536258;color:#222;font-family:Arial,"Malgun Gothic",sans-serif}.leaflet-popup-content{max-width:calc(100vw - 70px)}.leaflet-popup-content .iv-button{background:#e8eee8;color:#222}.leaflet-container{font-family:Arial,"Malgun Gothic",sans-serif}\n@media(max-width:480px){.iv-map{height:330px}.iv-shell{padding:9px 0}.iv-heading{align-items:flex-end}.iv-stock-table{font-size:11px}.iv-time{font-size:11px}}\n@media(pointer:coarse){button{min-height:44px}input,select,textarea{font-size:16px}}\n\n.iv-empty{min-height:150px;display:flex;align-items:center;justify-content:center;text-align:center;color:#627968;font-size:13px;padding:20px 8px}\n.iv-share-actions{display:flex;flex-wrap:wrap;gap:7px}.iv-share-actions .iv-button{flex:1 1 125px;font-size:12px;min-height:40px}.iv-share-actions .iv-share-button{background:#edf2e8;color:inherit;border-color:var(--iv-border)}.iv-share-hint{margin:5px 0 8px;font-size:11px}\n\n.leaflet-popup-content .iv-share-actions .iv-button{flex:1 1 110px;white-space:nowrap;padding:6px 8px;min-height:36px}\n\n.iv-stock-heading{font-size:12px;font-weight:600;margin:8px 0 2px}.iv-share-tools{border-top:1px solid var(--iv-border);margin-top:10px;font-size:12px}.iv-share-tools>summary{cursor:pointer;min-height:36px;padding:9px 0;color:var(--iv-muted)}.iv-share-tools .iv-memo{margin-top:5px}.iv-share-tools:not([open])>:not(summary){display:none}\n.iv-stock-table td.iv-date{text-align:center;font-variant-numeric:tabular-nums}.iv-date>span{display:block;white-space:nowrap;overflow-wrap:normal;word-break:keep-all;line-height:1.4}\n'
+
 
 # --- 대시보드 상태 변수 유지 ---
 if 'filtered_data' not in st.session_state: st.session_state['filtered_data'] = None
@@ -1213,7 +2079,7 @@ if not st.session_state['logged_in']:
         # 🚀 [잔상 완벽 해결] position: fixed 를 사용해 화면 중앙에 '로딩 박스'를 띄웁니다.
         # 프론트엔드 오류로 글자가 2번 출력되더라도 완벽하게 겹치므로 절대 2줄로 보이지 않습니다!
         st.markdown(f"""
-            <div style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
+            <div class='inv-auth-wait' style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
                 <h3 style='color:#D4AF37; margin-bottom: 15px;'>🔄 잠시만 기다려주세요...</h3>
                 <p style='color:#728A7C; margin: 0;'>안전한 접속을 위해 잠시만 기다려주세요.</p>
                 <p style='color:#3E5147; margin: 8px 0 0 0; font-size: 11px;'>{current_wait_count + 1} / {len(COOKIE_WAIT_STEPS)}</p>
@@ -1227,8 +2093,7 @@ if not st.session_state['logged_in']:
         st.rerun()
 
     # 진짜로 쿠키가 없는(로그아웃된) 상태라면 아래의 로그인 폼을 보여줍니다.
-    _, col_center, _ = st.columns([1, 1.2, 1])
-    with col_center:
+    with st.container(key="inv_login_shell"):
         # 🚀 [해결] 클라우드 서버에서도 파일을 잃어버리지 않도록 절대경로 생성
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
@@ -1242,15 +2107,15 @@ if not st.session_state['logged_in']:
             st.markdown(f'<div class="logo-container"><img src="data:image/png;base64,{encoded_string}"></div>', unsafe_allow_html=True)
         except FileNotFoundError:
             # 에러 발생 시, 서버가 어디서 파일을 찾고 있었는지 경로를 화면에 출력해서 원인 파악을 돕습니다.
-            st.markdown(f'<div class="logo-container"><span style="color:red; font-size:11px;">이미지를 찾을 수 없습니다.<br>검색 경로: {logo_path}</span></div>', unsafe_allow_html=True)
+            st.markdown('<div class="logo-container" style="color:#826a2c;font-size:26px;">♧</div>', unsafe_allow_html=True)
         
         # ... (로고 및 타이틀 표시 로직 기존과 동일하게 유지) ...
-        st.markdown('<div class="title-text">반추 재고 통합시스템</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle-text">관리자 및 허가된 사원만 접근 가능합니다.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="title-text">재고 조회 로그인</div>', unsafe_allow_html=True)
+        st.markdown('<div class="subtitle-text">등록된 계정으로 로그인하세요.</div>', unsafe_allow_html=True)
         
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("👤 아이디")
-            password = st.text_input("🔑 비밀번호", type="password")
+            username = st.text_input("아이디")
+            password = st.text_input("비밀번호", type="password")
             submit_button = st.form_submit_button("로그인", use_container_width=True)
 
             if submit_button:
@@ -1258,7 +2123,7 @@ if not st.session_state['logged_in']:
                     # 🔐 영문 "Running ..." 대신 한글 안내를 화면 중앙에 표시
                     _login_ph = st.empty()
                     _login_ph.markdown("""
-                        <div style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
+                        <div class='inv-auth-wait' style='position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 9999; background-color: #122820; padding: 40px; border-radius: 15px; box-shadow: 0 0 20px rgba(212,175,55,0.1);'>
                             <h3 style='color:#D4AF37; margin-bottom: 15px;'>🔐 로그인 중입니다...</h3>
                             <p style='color:#728A7C; margin: 0;'>계정 정보를 확인하고 있습니다.</p>
                         </div>
@@ -1337,407 +2202,345 @@ main_container = st.container(key="inventory_main")
 
 with main_container:
     if app_mode == "⚙️ 관리자 설정":
-        # 🚀 [추가] 관리자 설정 모드일 때만 잔상 제거 CSS 작동
-        st.markdown("""
-            <style>
-            /* 관리자 페이지에서만 stale(잔상) 요소를 숨김 */
-            [data-stale="true"] {
-                display: none !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("## ⚙️ 관리자 설정 대시보드")
-        
-        tab1, tab2, tab3, tab4 = st.tabs(["👥 계정 및 권한 관리", "🏢 보유처 주소록 DB 관리", "⚠️ 미매칭 보유처 확인", "🕒 시스템 변경 이력 (Log)"])
-    
-        # ---------------------------------------------------------
-        # 탭 1: 계정 관리
-        # ---------------------------------------------------------
-        with tab1:
-            users_df = load_sheet("users", ttl="10m")
-            
-            # 1. 상단: 계정 생성 및 수정/삭제 폼
-            col_new, col_edit = st.columns(2)
-            
-            with col_new:
-                st.markdown("#### ➕ 신규 계정 생성")
-                with st.container(border=True):
-                    with st.form("create_account_form"):
-                        new_user = st.text_input("새 아이디")
-                        new_password = st.text_input("새 비밀번호", type="password")
-                        new_role = st.selectbox("권한", ["user", "admin"])
-                        if st.form_submit_button("계정 생성", use_container_width=True):
-                            if new_user and new_password:
-                                if not users_df.empty and new_user in users_df['username'].values:
-                                    st.error("⚠️ 이미 존재하는 아이디입니다.")
-                                else:
-                                    new_row = pd.DataFrame([{"username": new_user, "password": make_hashes(new_password), "role": new_role}])
-                                    updated_users = pd.concat([users_df, new_row], ignore_index=True)
-                                    save_sheet(updated_users, "users")
-                                    add_audit_log(st.session_state['username'], "계정 생성", f"신규 계정 '{new_user}' ({new_role}) 생성")
-                                    st.success(f"✅ '{new_user}' 계정 생성 완료!")
-                                    st.rerun()
-                            else: st.warning("항목을 모두 입력해주세요.")
-            
-            with col_edit:
-                st.markdown("#### 🔄 계정 정보 수정 (비밀번호/권한)")
-                with st.container(border=True):
-                    user_list = users_df['username'].tolist() if not users_df.empty else []
-                    target_user = st.selectbox("수정할 아이디 선택", user_list)
-                    new_pw_reset = st.text_input("새 비밀번호 (변경시에만 입력)", type="password", placeholder="빈칸으로 두면 기존 비밀번호 유지")
-                    new_role_edit = st.selectbox("새 권한", ["user", "admin"], key="role_edit")
-                    
-                    col_btn1, col_btn2 = st.columns(2)
-                    if col_btn1.button("💾 정보 수정", use_container_width=True, type="primary") and target_user:
-                        idx = users_df.index[users_df['username'] == target_user].tolist()[0]
-                        if new_pw_reset:
-                            users_df.at[idx, 'password'] = make_hashes(new_pw_reset)
-                            users_df.at[idx, 'role'] = new_role_edit
-                            add_audit_log(st.session_state['username'], "계정 수정", f"'{target_user}' 비밀번호 및 권한({new_role_edit}) 변경")
-                        else:
-                            users_df.at[idx, 'role'] = new_role_edit
-                            add_audit_log(st.session_state['username'], "계정 수정", f"'{target_user}' 권한({new_role_edit}) 변경")
-                        save_sheet(users_df, "users")
-                        st.success(f"✅ '{target_user}' 계정 정보가 수정되었습니다.")
-                        st.rerun()
-                        
-                    if col_btn2.button("🗑️ 계정 삭제", use_container_width=True) and target_user:
-                        if target_user == "admin": st.error("최고 관리자(admin)는 삭제할 수 없습니다.")
-                        else:
-                            users_df = users_df[users_df['username'] != target_user]
-                            save_sheet(users_df, "users")
-                            add_audit_log(st.session_state['username'], "계정 삭제", f"'{target_user}' 계정 삭제됨")
-                            st.success(f"✅ '{target_user}' 계정이 삭제되었습니다.")
-                            st.rerun()
-
-            st.markdown("---") # 👈 구분선
-
-            # 2. 하단: 현재 등록된 계정 목록 표시
-            st.markdown("#### 📋 현재 등록된 계정 목록")
-            if not users_df.empty and 'username' in users_df.columns:
-                display_df = users_df[['username', 'role']].copy()
-                display_df.columns = ['👤 아이디', '🔑 권한 (admin/user)']
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-            else:
-                st.info("등록된 계정이 없습니다.")
-
-        # ---------------------------------------------------------
-        # 탭 2: 보유처 관리
-        # ---------------------------------------------------------
-        with tab2:
-            import numpy as np
-            
-            # 툴바 디자인 유지
+        with st.container(key="inv_admin_shell"):
+            # 🚀 [추가] 관리자 설정 모드일 때만 잔상 제거 CSS 작동
             st.markdown("""
                 <style>
-                div[data-testid="stElementToolbar"] { opacity: 1 !important; visibility: visible !important; display: flex !important; transform: scale(1.2) !important; border: none !important; background-color: transparent !important; position: absolute !important; right: 10px !important; top: -45px !important; z-index: 1000 !important; }
-                div[data-testid="stElementToolbar"] button svg { stroke-width: 3px !important; color: #262730 !important; }
+                /* 관리자 페이지에서만 stale(잔상) 요소를 숨김 */
+                [data-stale="true"] {
+                    display: none !important;
+                }
                 </style>
             """, unsafe_allow_html=True)
-
-            all_data_df = load_sheet("stores", ttl="10m")
+        
+            st.markdown("## 관리자 설정")
+            st.caption("거래처 주소록 · 계정 · 미매칭 · 작업 이력")
+        
+            admin_section = st.selectbox("관리할 항목", ["자료 갱신", "계정", "거래처", "미매칭", "작업 이력"], key="db_admin_section")
+            if admin_section == "자료 갱신":
+                _db_upload_panel()
+    
+            # ---------------------------------------------------------
+            # 탭 1: 계정 관리
+            # ---------------------------------------------------------
+            if admin_section == "계정":
+                users_df = load_sheet("users", ttl="10m")
             
-            c1, c2 = st.columns([7, 3])
-            with c1: st.markdown(f"#### 🏢 보유처 주소록 DB 관리 (총 {len(all_data_df)}개)")
-            with c2:
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer: all_data_df.to_excel(writer, index=False, sheet_name='stores_DB')
-                st.download_button(label="📥 주소록 전체 다운로드 (Excel)", data=output.getvalue(), file_name=f"주소록_전체_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-
-            # ---------------------------------------------------------
-            # 대량 등록 및 개별 수정 폼 
-            # ---------------------------------------------------------
-            st.markdown("---")
-            with st.expander("📥 엑셀 파일로 주소록 대량 등록 (클릭하여 열기)"):
-                st.info("💡 엑셀 파일 첫 번째 줄(헤더)에 반드시 **접점코드, 보유처명, 사업장주소** 관련 컬럼이 있어야 합니다.")
-                bulk_file = st.file_uploader("주소록 엑셀 업로드", type=["xlsx", "xls"], key="bulk_upload_addr")
-                
-                if bulk_file:
-                    bulk_df = pd.read_excel(bulk_file, dtype=str)
-                    bulk_df.columns = bulk_df.columns.astype(str).str.replace('▼', '').str.strip()
-                    col_mapping = {}
-                    for col in bulk_df.columns:
-                        if '접점' in col: col_mapping[col] = '접점코드'
-                        elif '보유처' in col: col_mapping[col] = '보유처명'
-                        elif '주소' in col: col_mapping[col] = '사업장주소'
-                    bulk_df.rename(columns=col_mapping, inplace=True)
+                # 1. 상단: 계정 생성 및 수정/삭제 폼
+                col_new, col_edit = st.columns(2)
+            
+                with col_new:
+                    st.markdown("#### ➕ 신규 계정 생성")
+                    with st.container(border=True):
+                        with st.form("create_account_form"):
+                            new_user = st.text_input("새 아이디")
+                            new_password = st.text_input("새 비밀번호", type="password")
+                            new_role = st.selectbox("권한", ["user", "admin"])
+                            if st.form_submit_button("계정 생성", use_container_width=True):
+                                if new_user and new_password:
+                                    if not users_df.empty and new_user in users_df['username'].values:
+                                        st.error("⚠️ 이미 존재하는 아이디입니다.")
+                                    else:
+                                        new_row = pd.DataFrame([{"username": new_user, "password": make_hashes(new_password), "role": new_role}])
+                                        updated_users = pd.concat([users_df, new_row], ignore_index=True)
+                                        save_sheet(updated_users, "users")
+                                        add_audit_log(st.session_state['username'], "계정 생성", f"신규 계정 '{new_user}' ({new_role}) 생성")
+                                        st.success(f"✅ '{new_user}' 계정 생성 완료!")
+                                        st.rerun()
+                                else: st.warning("항목을 모두 입력해주세요.")
+            
+                with col_edit:
+                    st.markdown("#### 🔄 계정 정보 수정 (비밀번호/권한)")
+                    with st.container(border=True):
+                        user_list = users_df['username'].tolist() if not users_df.empty else []
+                        target_user = st.selectbox("수정할 아이디 선택", user_list)
+                        new_pw_reset = st.text_input("새 비밀번호 (변경시에만 입력)", type="password", placeholder="빈칸으로 두면 기존 비밀번호 유지")
+                        new_role_edit = st.selectbox("새 권한", ["user", "admin"], key="role_edit")
                     
-                    st.write("👀 데이터 미리보기 (최대 5건):")
-                    st.dataframe(bulk_df.head(5), use_container_width=True)
-                    
-                    if st.button("💾 위 데이터를 DB에 일괄 추가/업데이트", type="primary"):
-                        with st.spinner("구글 시트에 1차 저장 중... (저장 후 꼭 최적화 버튼을 눌러주세요)"):
-                            req_cols = ['접점코드', '보유처명']
-                            if not all(col in bulk_df.columns for col in req_cols):
-                                st.error(f"⚠️ 엑셀에서 필수 컬럼을 찾지 못했습니다.")
+                        col_btn1, col_btn2 = st.columns(2)
+                        if col_btn1.button("💾 정보 수정", use_container_width=True, type="primary") and target_user:
+                            idx = users_df.index[users_df['username'] == target_user].tolist()[0]
+                            if new_pw_reset:
+                                users_df.at[idx, 'password'] = make_hashes(new_pw_reset)
+                                users_df.at[idx, 'role'] = new_role_edit
+                                add_audit_log(st.session_state['username'], "계정 수정", f"'{target_user}' 비밀번호 및 권한({new_role_edit}) 변경")
                             else:
-                                for col in ['x좌표', 'y좌표']:
-                                    if col not in bulk_df.columns: bulk_df[col] = ""
-                                # 🚀 [로직 개선] 기존 데이터 유지 + 겹치면 덮어쓰기 + 신규 추가 완벽 구현
-                                bulk_df['접점코드'] = bulk_df['접점코드'].astype(str).str.strip()
-                                # 혹시 모를 엑셀 파일 내의 중복 코드 제거 (맨 마지막 줄 기준)
-                                bulk_df = bulk_df.drop_duplicates(subset=['접점코드'], keep='last')
-                                
-                                temp_all = all_data_df.copy()
-                                if not temp_all.empty and '접점코드' in temp_all.columns:
-                                    temp_all['접점코드'] = temp_all['접점코드'].astype(str).str.strip()
-                                    
-                                    # 1. 기존 DB와 새 엑셀 데이터를 위아래로 무식하게 합칩니다.
-                                    combined_df = pd.concat([temp_all, bulk_df], ignore_index=True)
-                                    
-                                    # 2. 접점코드가 겹치면, 맨 밑에 붙은 '새로 업로드한 데이터(last)'를 남기고 예전 데이터를 삭제! (완벽한 업데이트)
-                                    updated_all = combined_df.drop_duplicates(subset=['접점코드'], keep='last')
-                                else: 
-                                    updated_all = bulk_df
-                                
-                                # 🚀 [로직 개선] 구글 시트에 저장하기 직전, 누락된 좌표들만 골라서 자동 변환
-                                with st.spinner("엑셀 데이터 병합 완료! 누락된 주소의 좌표를 네이버 API로 가져오는 중입니다... (데이터가 많으면 10초 이상 소요될 수 있습니다)"):
-                                    if 'x좌표' not in updated_all.columns: updated_all['x좌표'] = ""
-                                    if 'y좌표' not in updated_all.columns: updated_all['y좌표'] = ""
-                                    updated_all['x좌표'] = updated_all['x좌표'].astype(object)
-                                    updated_all['y좌표'] = updated_all['y좌표'].astype(object)
-                                    
-                                    for idx, row in updated_all.iterrows():
-                                        addr = str(row.get('사업장주소', ''))
-                                        if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
-                                            n_lat, n_lon = get_lat_lon(addr)
-                                            if n_lat:
-                                                updated_all.at[idx, 'y좌표'] = n_lat
-                                                updated_all.at[idx, 'x좌표'] = n_lon
-
-                                save_sheet(updated_all, "stores")
-                                
-                                # 대량 등록도 로그에 남김
-                                add_audit_log(st.session_state['username'], "보유처 대량 등록", f"엑셀 파일 업로드 ({len(bulk_df)}건 반영)")
-                                
-                                st.success(f"✅ 총 {len(bulk_df)}건의 데이터가 일괄 저장/업데이트 되었습니다. 구글 시트 동기화를 위해 잠시 대기합니다...")
-                                
-                                # 🚀 [핵심] 구글 시트에 데이터가 완전히 써질 수 있도록 1.5초 딜레이 부여! (미반영 현상 해결)
-                                time.sleep(1.5) 
-                                st.rerun()
-
-            st.markdown("---")
-            with st.expander("➕ 보유처 단건 등록 (클릭하여 열기)"):
-                with st.form("single_store_form"):
-                    s1, s2 = st.columns(2)
-                    with s1:
-                        single_code = st.text_input("접점코드 *", placeholder="예: A001")
-                        single_name = st.text_input("보유처명 *", placeholder="예: 홍대 직영점")
-                    with s2:
-                        single_addr = st.text_input("사업장주소", placeholder="예: 서울특별시 마포구 ...")
-                        single_region = st.text_input("대권역구분", placeholder="예: 서북")
-                    single_so = st.text_input("상권구분(소분류)", placeholder="예: 홍대")
-                    
-                    if st.form_submit_button("➕ 등록하기", use_container_width=True):
-                        if single_code and single_name:
-                            # 🚀 [로직 개선] 등록과 동시에 좌표를 가져와서 한 번에 완성 (비용 방어: 주소가 있을 때만 호출)
-                            with st.spinner("주소 좌표를 자동으로 변환하고 저장 중입니다..."):
-                                n_lat, n_lon = None, None
-                                if single_addr.strip():
-                                    n_lat, n_lon = get_lat_lon(single_addr.strip())
-                                    
-                                new_store = pd.DataFrame([{
-                                    "접점코드": single_code.strip(),
-                                    "보유처명": single_name.strip(),
-                                    "사업장주소": single_addr.strip(),
-                                    "대권역구분": single_region.strip(),
-                                    "상권구분": single_so.strip(),
-                                    "x좌표": n_lon if n_lon else "",
-                                    "y좌표": n_lat if n_lat else ""
-                                }])
-                            existing = all_data_df.copy()
-                            if not existing.empty and single_code.strip() in existing['접점코드'].astype(str).values:
-                                st.error(f"⚠️ 이미 존재하는 접점코드입니다: {single_code}")
-                            else:
-                                updated = pd.concat([existing, new_store], ignore_index=True)
-                                save_sheet(updated, "stores")
-                                add_audit_log(st.session_state['username'], "보유처 단건 등록", f"'{single_name}' ({single_code}) 등록")
-                                # 🚀 [수정] 이제 자동으로 좌표가 따지므로 문구 변경
-                                st.success(f"✅ '{single_name}' 등록 및 좌표 변환이 완료되었습니다!")
-                                st.rerun()
-                        else:
-                            st.warning("⚠️ 접점코드와 보유처명은 필수입니다.")
-
-            st.markdown("---")
-            # 🚀 [수정] 글자 입력 시마다 새로고침 되는 것을 막기 위해 st.form으로 묶음
-            with st.form("bulk_edit_form"):
-                edited_df = st.data_editor(all_data_df, num_rows="dynamic", use_container_width=True, height=400, key="bulk_editor_v4")
-                
-                # form 안에서는 반드시 st.form_submit_button을 사용해야 합니다.
-                submit_edit = st.form_submit_button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True)
-                
-                if submit_edit:
-                    # 🚀 [로직 개선] 저장 버튼 클릭 시, 빈칸 좌표만 쏙쏙 골라서 자동 채우기
-                    with st.spinner("변경된 데이터를 분석하고 필요한 좌표를 가져오는 중입니다..."):
-                        if 'x좌표' not in edited_df.columns: edited_df['x좌표'] = ""
-                        if 'y좌표' not in edited_df.columns: edited_df['y좌표'] = ""
-                        edited_df['x좌표'] = edited_df['x좌표'].astype(object)
-                        edited_df['y좌표'] = edited_df['y좌표'].astype(object)
+                                users_df.at[idx, 'role'] = new_role_edit
+                                add_audit_log(st.session_state['username'], "계정 수정", f"'{target_user}' 권한({new_role_edit}) 변경")
+                            save_sheet(users_df, "users")
+                            st.success(f"✅ '{target_user}' 계정 정보가 수정되었습니다.")
+                            st.rerun()
                         
-                        for idx, row in edited_df.iterrows():
-                            addr = str(row.get('사업장주소', ''))
-                            if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
-                                n_lat, n_lon = get_lat_lon(addr)
-                                if n_lat:
-                                    edited_df.at[idx, 'y좌표'] = n_lat
-                                    edited_df.at[idx, 'x좌표'] = n_lon
+                        if col_btn2.button("🗑️ 계정 삭제", use_container_width=True) and target_user:
+                            if target_user == "admin": st.error("최고 관리자(admin)는 삭제할 수 없습니다.")
+                            else:
+                                users_df = users_df[users_df['username'] != target_user]
+                                save_sheet(users_df, "users")
+                                add_audit_log(st.session_state['username'], "계정 삭제", f"'{target_user}' 계정 삭제됨")
+                                st.success(f"✅ '{target_user}' 계정이 삭제되었습니다.")
+                                st.rerun()
 
-                        save_sheet(edited_df, "stores")
-                        add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 자동 좌표 저장")
+                st.markdown("---") # 👈 구분선
+
+                # 2. 하단: 현재 등록된 계정 목록 표시
+                st.markdown("#### 📋 현재 등록된 계정 목록")
+                if not users_df.empty and 'username' in users_df.columns:
+                    display_df = users_df[['username', 'role']].copy()
+                    display_df.columns = ['👤 아이디', '🔑 권한 (admin/user)']
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("등록된 계정이 없습니다.")
+
+            # ---------------------------------------------------------
+            # 탭 2: 보유처 관리
+            # ---------------------------------------------------------
+            if admin_section == "거래처":
+                import numpy as np
+            
+                # 툴바 디자인 유지
+                st.markdown("""
+                    <style>
+                    .st-key-inv_admin_shell [data-testid="stElementToolbar"] { transform:none!important; background:transparent!important; }
+                    div[data-testid="stElementToolbar"] button svg { stroke-width: 3px !important; color: #262730 !important; }
+                    </style>
+                """, unsafe_allow_html=True)
+
+                all_data_df = load_sheet("stores", ttl="10m")
+            
+                c1, c2 = st.columns([7, 3])
+                with c1: st.markdown(f"#### 🏢 보유처 주소록 DB 관리 (총 {len(all_data_df)}개)")
+                with c2:
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer: all_data_df.to_excel(writer, index=False, sheet_name='stores_DB')
+                    st.download_button(label="📥 주소록 전체 다운로드 (Excel)", data=output.getvalue(), file_name=f"주소록_전체_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+                # ---------------------------------------------------------
+                # 대량 등록 및 개별 수정 폼 
+                # ---------------------------------------------------------
+                st.markdown("---")
+                st.info("판매여지도·거래처 원본 파일은 위 관리할 항목에서 ‘자료 갱신’을 선택해 업로드하세요.")
+
+                st.markdown("---")
+                with st.expander("➕ 보유처 단건 등록 (클릭하여 열기)"):
+                    with st.form("single_store_form"):
+                        s1, s2 = st.columns(2)
+                        with s1:
+                            single_code = st.text_input("접점코드 *", placeholder="예: A001")
+                            single_name = st.text_input("보유처명 *", placeholder="예: 홍대 직영점")
+                        with s2:
+                            single_addr = st.text_input("사업장주소", placeholder="예: 서울특별시 마포구 ...")
+                            single_region = st.text_input("대권역구분", placeholder="예: 서북")
+                        single_so = st.text_input("상권구분(소분류)", placeholder="예: 홍대")
                     
-                    # 들여쓰기 라인 맞춤 완료!
-                    st.success("✅ 저장이 완료되었습니다. 잠시 후 새로고침됩니다.")
-                    time.sleep(1.5) # 성공 메시지를 읽을 수 있도록 1.5초 대기
-                    st.rerun()
-
-        # ---------------------------------------------------------
-        # 탭 3: 미매칭 보유처 확인
-        # ---------------------------------------------------------
-        with tab3:
-            st.markdown("#### ⚠️ 미매칭 보유처 확인")
-            st.caption("현재 엑셀 데이터 중 주소록(DB)과 매칭되지 않는 목록을 상세 사유와 함께 표시합니다.")
-
-            # 🚀 [수정] 탭 이동 시 자동 실행을 막고, 조회 버튼을 추가하여 최신 정보로 비교
-            if st.button("🔄 최신 DB 기준으로 미매칭 데이터 조회", type="primary", use_container_width=True):
-                # 핵심! 확실한 갱신을 위해 파이썬이 기억하는 이전 데이터 메모리를 한 번 날려줍니다.
-                st.cache_data.clear()
-                
-                DATA_FILE = 'inventory_data.xlsx'
-                if os.path.exists(DATA_FILE):
-                    with st.spinner("최신 DB와 엑셀 데이터를 비교 분석 중입니다..."):
-                        try:
-                            # 1. 데이터 로드 및 전처리
-                            raw_df = pd.read_excel(DATA_FILE, dtype=str)
-                            raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
-                            db_df = load_sheet("stores", ttl="10m")
-
-                            # --- stores_inside(애칭 기준) 도 함께 로드 ---
-                            def _pick_col(_df, keywords, fallback_idx):
-                                for c in _df.columns:
-                                    if any(k in str(c) for k in keywords):
-                                        return c
-                                if len(_df.columns) > fallback_idx:
-                                    return _df.columns[fallback_idx]
-                                return None
-
-                            def _norm_key(v):
-                                return normalize_owner_match_key(v)
-
-                            inside_map = {}   # 정규화된 애칭 -> (주소, x좌표, y좌표)
-                            try:
-                                inside_df = load_sheet("stores_inside", ttl="10m")
-                                if inside_df is not None and not inside_df.empty:
-                                    nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
-                                    addr_c = _pick_col(inside_df, ['주소'], 15)
-                                    x_c    = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
-                                    y_c    = _pick_col(inside_df, ['y좌표', 'Y좌표', '위도'], 18)
-                                    if all([nick_c, addr_c, x_c, y_c]):
-                                        for _, _r in inside_df.iterrows():
-                                            _k = _norm_key(_r[nick_c])
-                                            if _k and _k != 'nan':
-                                                inside_map[_k] = (
-                                                    str(_r[addr_c]).strip(),
-                                                    str(_r[x_c]).strip().lower(),
-                                                    str(_r[y_c]).strip().lower(),
-                                                )
-                            except Exception as _e:
-                                st.info(f"ℹ️ stores_inside 시트를 읽지 못했습니다. stores 기준으로만 판정합니다. ({_e})")
-                            
-                            boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
-                            code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
-                            
-                            if boyu_col:
-                                # "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
-                                raw_filtered = raw_df[
-                                    (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
-                                    (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
-                                ].copy()
-
-                                # 이름 매칭이므로 접점번호 유무와 무관하게 보유처별로 검사합니다.
-                                raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col]).copy()
-                                if len(db_df.columns) > 6 and str(db_df.columns[6]).strip() == '반추관설':
-                                    db_df = db_df.copy()
-                                    db_df['_반추관설_키'] = db_df.iloc[:, 6].fillna('').map(_norm_key)
+                        if st.form_submit_button("➕ 등록하기", use_container_width=True):
+                            if single_code and single_name:
+                                # 🚀 [로직 개선] 등록과 동시에 좌표를 가져와서 한 번에 완성 (비용 방어: 주소가 있을 때만 호출)
+                                with st.spinner("주소 좌표를 자동으로 변환하고 저장 중입니다..."):
+                                    n_lat, n_lon = None, None
+                                    if single_addr.strip():
+                                        n_lat, n_lon = get_lat_lon(single_addr.strip())
+                                    
+                                    new_store = pd.DataFrame([{
+                                        "접점코드": single_code.strip(),
+                                        "보유처명": single_name.strip(),
+                                        "사업장주소": single_addr.strip(),
+                                        "대권역구분": single_region.strip(),
+                                        "상권구분": single_so.strip(),
+                                        "x좌표": n_lon if n_lon else "",
+                                        "y좌표": n_lat if n_lat else ""
+                                    }])
+                                existing = all_data_df.copy()
+                                if not existing.empty and single_code.strip() in existing['접점코드'].astype(str).values:
+                                    st.error(f"⚠️ 이미 존재하는 접점코드입니다: {single_code}")
                                 else:
-                                    db_df = db_df.iloc[0:0].copy()
-                                    db_df['_반추관설_키'] = pd.Series(dtype=str)
-                                    st.warning('stores G열 반추관설을 확인할 수 없습니다. inside 기준으로 검사합니다.')
+                                    updated = pd.concat([existing, new_store], ignore_index=True)
+                                    save_sheet(updated, "stores")
+                                    add_audit_log(st.session_state['username'], "보유처 단건 등록", f"'{single_name}' ({single_code}) 등록")
+                                    # 🚀 [수정] 이제 자동으로 좌표가 따지므로 문구 변경
+                                    st.success(f"✅ '{single_name}' 등록 및 좌표 변환이 완료되었습니다!")
+                                    st.rerun()
+                            else:
+                                st.warning("⚠️ 접점코드와 보유처명은 필수입니다.")
 
-                                def _check_inside(row):
-                                    """stores_inside 애칭 매칭 결과. 정상이면 'OK', 미등록이면 None"""
-                                    info = inside_map.get(_norm_key(row[boyu_col]))
-                                    if info is None:
-                                        return None
-                                    addr, x_val, y_val = info
-                                    if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
-                                        return "📍 stores_inside에 애칭은 있으나 주소(P열)가 비어 있습니다."
-                                    x_num = pd.to_numeric(x_val, errors='coerce')
-                                    y_num = pd.to_numeric(y_val, errors='coerce')
-                                    if not (pd.notna(x_num) and pd.notna(y_num)
-                                            and -180 <= x_num <= 180 and -90 <= y_num <= 90
-                                            and x_num != 0 and y_num != 0):
-                                        return "🌐 stores_inside에 주소는 있으나 좌표(R/S열)가 비어 있거나 올바르지 않습니다."
-                                    return "OK"
+                st.markdown("---")
+                # 🚀 [수정] 글자 입력 시마다 새로고침 되는 것을 막기 위해 st.form으로 묶음
+                with st.form("bulk_edit_form"):
+                    edited_df = st.data_editor(all_data_df, num_rows="dynamic", use_container_width=True, height=400, key="bulk_editor_v4")
+                
+                    # form 안에서는 반드시 st.form_submit_button을 사용해야 합니다.
+                    submit_edit = st.form_submit_button("💾 위 표의 모든 변경사항 일괄 저장", use_container_width=True)
+                
+                    if submit_edit:
+                        # 🚀 [로직 개선] 저장 버튼 클릭 시, 빈칸 좌표만 쏙쏙 골라서 자동 채우기
+                        with st.spinner("변경된 데이터를 분석하고 필요한 좌표를 가져오는 중입니다..."):
+                            if 'x좌표' not in edited_df.columns: edited_df['x좌표'] = ""
+                            if 'y좌표' not in edited_df.columns: edited_df['y좌표'] = ""
+                            edited_df['x좌표'] = edited_df['x좌표'].astype(object)
+                            edited_df['y좌표'] = edited_df['y좌표'].astype(object)
+                        
+                            for idx, row in edited_df.iterrows():
+                                addr = str(row.get('사업장주소', ''))
+                                if pd.notna(addr) and addr.strip() != "" and (not row.get('x좌표') or not row.get('y좌표') or str(row.get('x좌표')).lower() == 'nan'):
+                                    n_lat, n_lon = get_lat_lon(addr)
+                                    if n_lat:
+                                        edited_df.at[idx, 'y좌표'] = n_lat
+                                        edited_df.at[idx, 'x좌표'] = n_lon
 
-                                def get_unmatch_reason(row):
-                                    # 1순위: inside의 거래처 애칭.
-                                    inside_result = _check_inside(row)
-                                    if inside_result == "OK":
-                                        return None
-                                    # 2순위: stores G열 반추관설과 재고 보유처 이름.
-                                    owner_key = _norm_key(row[boyu_col])
-                                    if owner_key in ('', 'nan', 'none', 'null', '<na>', '-'):
-                                        return "❌ 재고표의 보유처 이름이 비어 있습니다."
-                                    match = db_df[db_df['_반추관설_키'] == owner_key]
-                                    if match.empty:
-                                        return inside_result or "❌ inside 애칭과 stores 반추관설 어디에도 이름이 없습니다."
-                                    m_row = match.iloc[-1]
-                                    addr = str(m_row.get('사업장주소', '')).strip()
-                                    x_num = pd.to_numeric(m_row.get('x좌표'), errors='coerce')
-                                    y_num = pd.to_numeric(m_row.get('y좌표'), errors='coerce')
-                                    if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
-                                        return "📍 inside와 stores 반추관설에서 사용할 주소를 찾지 못했습니다."
-                                    if not (pd.notna(x_num) and pd.notna(y_num)
-                                            and -180 <= x_num <= 180 and -90 <= y_num <= 90
-                                            and x_num != 0 and y_num != 0):
-                                        return "🌐 inside와 stores 반추관설에 사용할 좌표(위경도)가 없습니다."
+                            save_sheet(edited_df, "stores")
+                            add_audit_log(st.session_state['username'], "보유처 주소록 수정", "리스트에서 직접 데이터 변경 및 자동 좌표 저장")
+                    
+                        # 들여쓰기 라인 맞춤 완료!
+                        st.success("✅ 저장이 완료되었습니다. 잠시 후 새로고침됩니다.")
+                        time.sleep(1.5) # 성공 메시지를 읽을 수 있도록 1.5초 대기
+                        st.rerun()
+
+            # ---------------------------------------------------------
+            # 탭 3: 미매칭 보유처 확인
+            # ---------------------------------------------------------
+            if admin_section == "미매칭":
+                st.markdown("#### ⚠️ 미매칭 보유처 확인")
+                st.caption("현재 엑셀 데이터 중 주소록(DB)과 매칭되지 않는 목록을 상세 사유와 함께 표시합니다.")
+
+                # 🚀 [수정] 탭 이동 시 자동 실행을 막고, 조회 버튼을 추가하여 최신 정보로 비교
+                if st.button("🔄 최신 DB 기준으로 미매칭 데이터 조회", type="primary", use_container_width=True):
+                    # 핵심! 확실한 갱신을 위해 파이썬이 기억하는 이전 데이터 메모리를 한 번 날려줍니다.
+                    st.cache_data.clear()
+                
+                    DATA_FILE = 'inventory_data.xlsx'
+                    if os.path.exists(DATA_FILE):
+                        with st.spinner("최신 DB와 엑셀 데이터를 비교 분석 중입니다..."):
+                            try:
+                                # 1. 데이터 로드 및 전처리
+                                raw_df = pd.read_excel(DATA_FILE, dtype=str)
+                                raw_df.columns = raw_df.columns.astype(str).str.replace('▼', '').str.strip()
+                                db_df = load_sheet("stores", ttl="10m")
+
+                                # --- stores_inside(애칭 기준) 도 함께 로드 ---
+                                def _pick_col(_df, keywords, fallback_idx):
+                                    for c in _df.columns:
+                                        if any(k in str(c) for k in keywords):
+                                            return c
+                                    if len(_df.columns) > fallback_idx:
+                                        return _df.columns[fallback_idx]
                                     return None
 
-                                raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
-                                unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
+                                def _norm_key(v):
+                                    return normalize_owner_match_key(v)
 
-                                if not unmapped_display.empty:
-                                    st.warning(f"총 **{len(unmapped_display)}**건의 미매칭 데이터가 발견되었습니다.")
-                                    final_cols = [boyu_col, '미매칭 사유']
-                                    if '대분류' in unmapped_display.columns: final_cols.append('대분류')
-                                    st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
-                                else: 
-                                    st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
-                            else: st.error("엑셀 파일에서 보유처 컬럼을 식별할 수 없습니다.")
-                        except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
-                else: 
-                    st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
-            else:
-                st.info("👆 위 버튼을 눌러 최신 DB 데이터를 기준으로 미매칭 목록을 조회하세요.")
+                                inside_map = {}   # 정규화된 애칭 -> (주소, x좌표, y좌표)
+                                try:
+                                    inside_df = load_sheet("stores_inside", ttl="10m")
+                                    if inside_df is not None and not inside_df.empty:
+                                        nick_c = _pick_col(inside_df, ['애칭', '거래처'], 1)
+                                        addr_c = _pick_col(inside_df, ['주소'], 15)
+                                        x_c    = _pick_col(inside_df, ['x좌표', 'X좌표', '경도'], 17)
+                                        y_c    = _pick_col(inside_df, ['y좌표', 'Y좌표', '위도'], 18)
+                                        if all([nick_c, addr_c, x_c, y_c]):
+                                            for _, _r in inside_df.iterrows():
+                                                _k = _norm_key(_r[nick_c])
+                                                if _k and _k != 'nan':
+                                                    inside_map[_k] = (
+                                                        str(_r[addr_c]).strip(),
+                                                        str(_r[x_c]).strip().lower(),
+                                                        str(_r[y_c]).strip().lower(),
+                                                    )
+                                except Exception as _e:
+                                    st.info(f"ℹ️ stores_inside 시트를 읽지 못했습니다. stores 기준으로만 판정합니다. ({_e})")
+                            
+                                boyu_col = next((c for c in raw_df.columns if '보유처' in str(c).replace('▼','').strip()), None)
+                                code_col = next((c for c in raw_df.columns if any(k in str(c) for k in ['접점번호', '접점코드'])), None)
+                            
+                                if boyu_col:
+                                    # "도매-" 또는 "반추"가 포함된 보유처는 목록에서 제외
+                                    raw_filtered = raw_df[
+                                        (~raw_df[boyu_col].astype(str).str.contains("반추", na=False)) & 
+                                        (~raw_df[boyu_col].astype(str).str.startswith("도매-", na=False))
+                                    ].copy()
 
-        # ---------------------------------------------------------
-        # 탭 4: 시스템 변경 이력 (Audit Log)
-        # ---------------------------------------------------------
-        with tab4:
-            st.markdown("#### 🕒 관리자 작업 이력")
-            st.caption("누가, 언제, 어떤 작업을 수행했는지 확인합니다. (최근 100건)")
-            
-            try:
-                log_df = load_sheet("logs", ttl="10m")
-                if not log_df.empty:
-                    # [회원님 원본 복원] 컬럼명 유지 및 역순 정렬
-                    log_df = log_df.sort_values(by="발생시간", ascending=False).head(100)
-                    st.dataframe(log_df, use_container_width=True, hide_index=True)
+                                    # 이름 매칭이므로 접점번호 유무와 무관하게 보유처별로 검사합니다.
+                                    raw_unique = raw_filtered.drop_duplicates(subset=[boyu_col]).copy()
+                                    if len(db_df.columns) > 6 and str(db_df.columns[6]).strip() == '반추관설':
+                                        db_df = db_df.copy()
+                                        db_df['_반추관설_키'] = db_df.iloc[:, 6].fillna('').map(_norm_key)
+                                    else:
+                                        db_df = db_df.iloc[0:0].copy()
+                                        db_df['_반추관설_키'] = pd.Series(dtype=str)
+                                        st.warning('stores G열 반추관설을 확인할 수 없습니다. inside 기준으로 검사합니다.')
+
+                                    def _check_inside(row):
+                                        """stores_inside 애칭 매칭 결과. 정상이면 'OK', 미등록이면 None"""
+                                        info = inside_map.get(_norm_key(row[boyu_col]))
+                                        if info is None:
+                                            return None
+                                        addr, x_val, y_val = info
+                                        if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
+                                            return "📍 stores_inside에 애칭은 있으나 주소(P열)가 비어 있습니다."
+                                        x_num = pd.to_numeric(x_val, errors='coerce')
+                                        y_num = pd.to_numeric(y_val, errors='coerce')
+                                        if not (pd.notna(x_num) and pd.notna(y_num)
+                                                and -180 <= x_num <= 180 and -90 <= y_num <= 90
+                                                and x_num != 0 and y_num != 0):
+                                            return "🌐 stores_inside에 주소는 있으나 좌표(R/S열)가 비어 있거나 올바르지 않습니다."
+                                        return "OK"
+
+                                    def get_unmatch_reason(row):
+                                        # 1순위: inside의 거래처 애칭.
+                                        inside_result = _check_inside(row)
+                                        if inside_result == "OK":
+                                            return None
+                                        # 2순위: stores G열 반추관설과 재고 보유처 이름.
+                                        owner_key = _norm_key(row[boyu_col])
+                                        if owner_key in ('', 'nan', 'none', 'null', '<na>', '-'):
+                                            return "❌ 재고표의 보유처 이름이 비어 있습니다."
+                                        match = db_df[db_df['_반추관설_키'] == owner_key]
+                                        if match.empty:
+                                            return inside_result or "❌ inside 애칭과 stores 반추관설 어디에도 이름이 없습니다."
+                                        m_row = match.iloc[-1]
+                                        addr = str(m_row.get('사업장주소', '')).strip()
+                                        x_num = pd.to_numeric(m_row.get('x좌표'), errors='coerce')
+                                        y_num = pd.to_numeric(m_row.get('y좌표'), errors='coerce')
+                                        if addr.lower() in ('', 'nan', 'none', 'null', '<na>', '-', '미등록', '주소 미등록'):
+                                            return "📍 inside와 stores 반추관설에서 사용할 주소를 찾지 못했습니다."
+                                        if not (pd.notna(x_num) and pd.notna(y_num)
+                                                and -180 <= x_num <= 180 and -90 <= y_num <= 90
+                                                and x_num != 0 and y_num != 0):
+                                            return "🌐 inside와 stores 반추관설에 사용할 좌표(위경도)가 없습니다."
+                                        return None
+
+                                    raw_unique['미매칭 사유'] = raw_unique.apply(get_unmatch_reason, axis=1)
+                                    unmapped_display = raw_unique[raw_unique['미매칭 사유'].notna()].copy()
+
+                                    if not unmapped_display.empty:
+                                        st.warning(f"총 **{len(unmapped_display)}**건의 미매칭 데이터가 발견되었습니다.")
+                                        final_cols = [boyu_col, '미매칭 사유']
+                                        if '대분류' in unmapped_display.columns: final_cols.append('대분류')
+                                        st.dataframe(unmapped_display[final_cols], use_container_width=True, hide_index=True)
+                                    else: 
+                                        st.success("🎉 모든 데이터가 주소록 DB와 완벽하게 매칭되어 있습니다!")
+                                else: st.error("엑셀 파일에서 보유처 컬럼을 식별할 수 없습니다.")
+                            except Exception as e: st.error(f"데이터 분석 중 오류 발생: {e}")
+                    else: 
+                        st.warning("📂 먼저 메인 화면에서 재고 엑셀 파일을 업로드해주세요.")
                 else:
+                    st.info("👆 위 버튼을 눌러 최신 DB 데이터를 기준으로 미매칭 목록을 조회하세요.")
+
+            # ---------------------------------------------------------
+            # 탭 4: 시스템 변경 이력 (Audit Log)
+            # ---------------------------------------------------------
+            if admin_section == "작업 이력":
+                st.markdown("#### 🕒 관리자 작업 이력")
+                st.caption("누가, 언제, 어떤 작업을 수행했는지 확인합니다. (최근 100건)")
+            
+                try:
+                    log_df = load_sheet("logs", ttl="10m")
+                    if not log_df.empty:
+                        # [회원님 원본 복원] 컬럼명 유지 및 역순 정렬
+                        log_df = log_df.sort_values(by="발생시간", ascending=False).head(100)
+                        st.dataframe(log_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("아직 기록된 로그가 없거나 데이터베이스를 불러올 수 없습니다.")
+                except Exception as e:
                     st.warning("아직 기록된 로그가 없거나 데이터베이스를 불러올 수 없습니다.")
-            except Exception as e:
-                st.warning("아직 기록된 로그가 없거나 데이터베이스를 불러올 수 없습니다.")
         
     # 🚀 여기서부터 대시보드 로직 시작 (elif 추가)
     elif app_mode == "📊 대시보드":
@@ -1962,7 +2765,7 @@ with main_container:
             return str(address).strip().casefold() in {"", "nan", "none", "null", "<na>", "-", "미등록", "주소 미등록"}
 
         @st.cache_data(ttl="12h", show_spinner=False)
-        def load_data_optimized(file, file_version=None):
+        def load_data_optimized(file, file_version=None, db_revision=None):
             # 1. 데이터 로드 (parquet 캐시 우선, 없거나 실패하면 엑셀)
             df = None
             if isinstance(file, str):
@@ -2055,7 +2858,8 @@ with main_container:
                 # N열은 헤더 이름과 무관하게 14번째 열입니다.
                 if contact_nick_col is not None and len(inside_df.columns) >= 14:
                     contact_keys = inside_df[contact_nick_col].map(normalize_owner_match_key)
-                    contact_values = inside_df.iloc[:, 13].map(format_knote_contact)
+                    contact_phone_col = next((c for c in inside_df.columns if str(c).strip()=='전화번호'), None)
+                    contact_values = (inside_df[contact_phone_col] if contact_phone_col is not None else pd.Series('', index=inside_df.index)).map(format_knote_contact)
                     contact_rows = pd.DataFrame({"key": contact_keys, "contact": contact_values})
                     contact_rows = contact_rows[
                         ~contact_rows['key'].isin(['', 'nan', 'none', '<na>'])
@@ -2103,7 +2907,7 @@ with main_container:
                                        & _valid_xy(df['x좌표'], df['y좌표']))
                     # inside가 완전하면 무조건 우선. 불완전하면 정상 stores로 보완합니다.
                     # 양쪽 모두 불완전한 경우에도 inside의 유효한 주소는 보존합니다.
-                    need = inside_address_ok & (inside_complete | ~stores_complete)
+                    need = inside_address_ok
 
                     df.loc[need, '사업장주소'] = df.loc[need, '_ins_주소']
                     inside_x = pd.to_numeric(df['_ins_x'], errors='coerce')
@@ -2311,6 +3115,7 @@ with main_container:
             if st.button("🗑️ 데이터 초기화", type="secondary"):
                 if os.path.exists(DATA_FILE): os.remove(DATA_FILE)
                 if os.path.exists(META_FILE): os.remove(META_FILE)
+                if os.path.exists(DATA_FILE + '.upload.json'): os.remove(DATA_FILE + '.upload.json')
                 if os.path.exists(CACHE_FILE): os.remove(CACHE_FILE)
                 st.session_state.clear()
                 st.rerun()
@@ -2319,11 +3124,17 @@ with main_container:
             st.session_state['last_uploaded'] = None
 
         if uploaded_file:
-            current_file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+            current_file_id = f"{uploaded_file.name}_{hashlib.sha256(uploaded_file.getbuffer()).hexdigest()}"
             if st.session_state['last_uploaded'] != current_file_id:
                 try:
                     with open(DATA_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
                     with open(META_FILE, "w", encoding="utf-8") as f: f.write(uploaded_file.name)
+                    try:
+                        _inv_record_upload(DATA_FILE, uploaded_file.name)
+                    except OSError:
+                        # The inventory remains saved. Header falls back to file save time.
+                        print('[업로드 시각 기록 실패: 파일 저장 시각을 표시합니다]')
+
                     
                     # 🚀 parquet 캐시 생성 (실패 시 반드시 삭제 → 옛 데이터 잔존 방지)
                     try:
@@ -2344,1198 +3155,14 @@ with main_container:
             try: 
                 # 🚀 [수정] 요청하신 깔끔한 멘트로 변경 완료
                 with st.spinner("🔄 자료를 갱신중입니다."):
-                    df = load_data_optimized(DATA_FILE, (os.stat(DATA_FILE).st_mtime_ns, os.stat(DATA_FILE).st_size))
+                    df = load_data_optimized(DATA_FILE, (os.stat(DATA_FILE).st_mtime_ns, os.stat(DATA_FILE).st_size), _db_revision())
+                    if df is not None: df.attrs['_db_revision'] = _db_revision()
             except Exception as e:
                 st.error(f"데이터 로드 오류: {e}")
 
-       # 2. 메인 화면: 상태바
-        st.markdown("""
-            <style>
-            /* 1. 부모 가로 블록: 모바일에서도 무조건 1줄(row) 강제 유지 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important; 
-            align-items: center !important; 
-            gap: 8px !important; 
-            margin-bottom: 0px !important;
-            max-width: 100% !important;
-            padding-right: 20px !important; /* 👈 [핵심] 우측 여백을 3배로 늘려서 버튼을 왼쪽으로 쑥 밀어냅니다! */
-            box-sizing: border-box !important;
-            }
-            
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) * { margin: 0 !important; }
-            
-            /* 2. 컬럼 너비 강제 할당 및 높이 35px 고정 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"] {
-                width: auto !important;
-                min-width: 0 !important; /* 👈 내부 텍스트가 팽창하는 것 방어 */
-                padding: 0 !important;
-                height: 35px !important; 
-                display: flex !important;
-                align-items: center !important;
-            }
-
-            /* 3. [왼쪽 상태바 영역] 버튼 크기와 여백을 뺀 나머지 공간 확보 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(1) {
-                flex: 1 1 0px !important;  /* 👈 [수정] 빈 공간에서 시작해서 남는 공간만 채우도록 지시 */
-                width: 0px !important;     /* 👈 [수정] 억지로 팽창하는 것을 차단 */
-                overflow: hidden !important; /* 👈 내부 텍스트가 박스를 밀어내는 것 방어 */
-            }
-
-            /* 4. [오른쪽 버튼 영역] 35px 고정 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) > div[data-testid="column"]:nth-child(2) {
-                flex: 0 0 35px !important; 
-                width: 35px !important;
-                justify-content: center !important;   /* 👈 [수정] 칸의 중앙에 배치하여 시작점을 안쪽으로 당김 */
-                
-            }
-
-            /* 🚀 5. [핵심 해결] 상태바 텍스트 1줄 강제 및 줄임표(...) 처리 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) .file-status-bar {
-                height: 35px !important; 
-                width: 100% !important;
-                display: block !important; /* flex 대신 block으로 텍스트 절단 허용 */
-                line-height: 33px !important; /* 수직 중앙 정렬 보정 */
-                padding: 0 10px !important; 
-                box-sizing: border-box !important;
-                background-color: #182C24 !important; 
-                border: 1px solid #3A5A4A !important; 
-                color: #D4AF37 !important;
-                border-radius: 8px !important; 
-                font-size: 14px !important; 
-                font-weight: bold !important;
-                
-                /* 👇 2줄 꺾임 방지 절대 방어 코드 */
-                white-space: nowrap !important; 
-                overflow: hidden !important;
-                text-overflow: ellipsis !important; 
-            }
-
-            /* 7. 새로고침 버튼 디자인 (흰색 배경 제거 및 골드 테마 적용) */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) button {
-                width: 35px !important;
-                height: 35px !important;
-                min-height: 35px !important;
-                padding: 0 !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
-                font-size: 16px !important; 
-                border-radius: 8px !important; 
-                box-sizing: border-box !important;
-
-                /* 🚀 추가된 색상 코드 */
-                background-color: #000000 !important; /* 배경을 검정색으로 고정 */
-                color: #D4AF37 !important;           /* 아이콘(화살표)을 금색으로 */
-                border: 1px solid #D4AF37 !important; /* 테두리를 금색으로 */
-            }
-
-            /* 마우스 올렸을 때(Hover) 효과 추가 */
-            div[data-testid="stHorizontalBlock"]:has(.status-marker) button:hover {
-                background-color: #1a1a1a !important;
-                border-color: #FCECA1 !important;
-                color: #FCECA1 !important;
-            }
-
-            /* 8. 모바일 폰트 크기 미세 조절 */
-            @media (max-width: 400px) {
-                div[data-testid="stHorizontalBlock"]:has(.status-marker) .file-status-bar {
-                    font-size: 12px !important;
-                    padding: 0 6px !important;
-                }
-            }
-            </style>
-            
-        """, unsafe_allow_html=True)
-
-        status_col, refresh_col = st.columns([9.5, 0.5])
-        
-        with status_col:
-            if os.path.exists(META_FILE):
-                with open(META_FILE, "r", encoding="utf-8") as f: f_name = f.read()
-                st.markdown(f"<span class='status-marker' style='display:none;'></span><div class='file-status-bar'><span>✅ 저장 완료</span>&nbsp;&nbsp;<span>📂 <b>{f_name}</b></span></div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<span class='status-marker' style='display:none;'></span><div class='file-status-bar' style='background-color:#fff3e0 !important; color:#ef6c00 !important; border-color:#ef6c00 !important;'><span>⚠️ 파일 없음</span></div>", unsafe_allow_html=True)
-                
-        with refresh_col:
-            if st.button("🔄", help="새로고침", use_container_width=True):
-                st.cache_data.clear()
-                st.rerun()
-        
         if df is not None:
-            # 검색조건 초기화 버튼 전용 디자인
-            st.markdown("""
-                <style>
-                div.st-key-inventory_reset_filters div.stButton > button {
-                    height: 28px !important;
-                    min-height: 28px !important;
-                    padding: 0px 10px !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-
-                    background-color: #243A30 !important;
-                    color: #CBD8D0 !important;
-                    border: 1px solid #728A7C !important;
-                    border-radius: 6px !important;
-                }
-
-                div.st-key-inventory_reset_filters div.stButton > button p {
-                    color: #CBD8D0 !important;
-                    font-size: 13px !important;
-                    margin: 0 !important;
-                    line-height: 16px !important;
-                }
-
-                div.st-key-inventory_reset_filters div.stButton > button:hover,
-                div.st-key-inventory_reset_filters div.stButton > button:focus,
-                div.st-key-inventory_reset_filters div.stButton > button:active {
-                    background-color: #345044 !important;
-                    border-color: #A9BDB2 !important;
-                    box-shadow: none !important;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
-            st.button(
-                "검색조건 전체 초기화",
-                key="inventory_reset_filters",
-                on_click=reset_inventory_filters,
-                use_container_width=True,
-            )
-
-            # 컬럼 매핑
-            col_map = {}
-            for col in df.columns:
-                c = str(col).replace('▼', '').strip()
-                if '보유처' in c and '보유처' not in col_map: col_map['보유처'] = col
-                elif '모델명' in c: col_map['모델명'] = col
-                elif '색상' in c: col_map['색상'] = col
-                elif any(k in c for k in ['재고', '상태', '등급']): col_map['status'] = col
-                elif '일련번호' in c: col_map['일련번호'] = col
-                elif '유형' in c: col_map['모델유형'] = col  # 👈 [추가] 엑셀에서 '유형' 글자가 들어간 열 찾기
-
-            target_col = None
-            for col in df.columns:
-                c = str(col).replace('▼', '').strip()
-                if any(k in c for k in ['출고일']): 
-                    target_col = col
-                    break
-                    
-            if target_col is None and len(df.columns) >= 14: 
-                target_col = df.columns[13]
-
-            real_boyu = col_map.get('보유처')
-            real_model = col_map.get('모델명', df.columns[0])
-            real_color = col_map.get('색상', None)
-            real_type = col_map.get('모델유형', None) # 👈 [추가] 모델유형 변수 등록
-            real_status = col_map.get('status', None)
-            real_target = target_col
-            real_serial = col_map.get('일련번호', None)
-
-            # 3. 검색창
-            st.markdown("---")
-
-            # ==========================================================================
-            # 검색 필터
-            # selectbox에서 하나를 선택하면 드롭다운을 닫고,
-            # 선택값은 Session State 목록에 누적합니다.
-            # ==========================================================================
-
-            @st.fragment
-            def search_filter_section():
-
-                # --------------------------------------------------------------
-                # 1. URL에 저장된 다중 조건 읽기
-                # --------------------------------------------------------------
-                def _qp_list(_key):
-                    try:
-                        return [
-                            str(v)
-                            for v in st.query_params.get_all(_key)
-                            if str(v).strip()
-                        ]
-                    except Exception:
-                        return []
-
-                # --------------------------------------------------------------
-                # 2. 현재 업로드 파일이 변경되었는지 확인
-                #
-                # last_uploaded는 기존 업로드 처리 코드에서 생성하는 파일 ID입니다.
-                # 파일이 바뀔 때만 검색 옵션을 다시 생성합니다.
-                # --------------------------------------------------------------
-                # 현재 브라우저 세션에서 업로드한 파일 ID
-                current_filter_file = st.session_state.get("last_uploaded")
-
-                # 인터넷 창을 닫았다가 다시 접속하면 session_state가 초기화되어
-                # last_uploaded가 None이 됩니다.
-                # 이 경우 서버에 저장된 재고 파일의 크기와 수정시간으로
-                # 고유한 파일 ID를 다시 생성합니다.
-                if os.path.exists(DATA_FILE):
-                    saved_file_stat = os.stat(DATA_FILE)
-
-                    current_filter_file = (
-                        f"saved_inventory_"
-                        f"{saved_file_stat.st_size}_"
-                        f"{saved_file_stat.st_mtime_ns}"
-                    )
-
-                    # 파일 버전은 옵션 캐시에만 사용합니다.
-
-                # 저장 파일도 없는 경우
-                if not current_filter_file:
-                    current_filter_file = "__no_inventory_file__"
-
-                # 다음 중 하나라도 해당하면 옵션 목록을 다시 생성합니다.
-                #
-                # 1. 재고 파일이 변경됨
-                # 2. 브라우저 재접속으로 옵션 Session State가 사라짐
-                filter_cache_missing = any(
-                    key not in st.session_state
-                    for key in [
-                        "_filter_model_options",
-                        "_filter_color_options",
-                        "_filter_dae_options",
-                        "_filter_so_options",
-                        "_filter_owner_options",
-                    ]
-                )
-
-                if (
-                    st.session_state.get("_filter_option_file")
-                    != current_filter_file
-                    or filter_cache_missing
-                ):
-
-                    # 모델 목록
-                    model_options = sorted(
-                        [
-                            str(v)
-                            for v in df[real_model].dropna().unique().tolist()
-                            if str(v).strip()
-                        ]
-                    )
-
-                    # 색상 목록
-                    if real_color:
-                        color_options = sorted(
-                            [
-                                v
-                                for v in df[real_color].dropna().unique().tolist()
-                                if str(v).strip()
-                            ],
-                            key=lambda x: str(x)
-                        )
-                    else:
-                        color_options = []
-
-                    # 대분류 목록
-                    present_dae = set(
-                        [
-                            v
-                            for v in df["대분류_캐시"].dropna().unique().tolist()
-                            if str(v).strip()
-                        ]
-                    )
-
-                    dae_options = [
-                        x for x in CANONICAL_DAE
-                        if x in present_dae
-                    ]
-
-                    dae_options += sorted(
-                        [
-                            x for x in present_dae
-                            if x not in CANONICAL_DAE and x != "미분류"
-                        ],
-                        key=lambda x: str(x)
-                    )
-
-                    if "강원" in dae_options:
-                        dae_options.remove("강원")
-                        dae_options.append("강원")
-
-                    if "사무실(반추정보통신)" not in dae_options:
-                        dae_options.insert(0, "사무실(반추정보통신)")
-
-                    # 소분류 목록
-                    raw_so = [
-                        x
-                        for x in df["소분류_캐시"].dropna().unique().tolist()
-                        if x not in ["미분류", "전체허용"]
-                        and str(x).strip()
-                    ]
-
-                    so_priority = {}
-
-                    if "사업장주소" in df.columns:
-                        valid_addr_df = (
-                            df.dropna(subset=["사업장주소"])
-                            .drop_duplicates(subset=["소분류_캐시"])
-                        )
-
-                        addr_map = dict(
-                            zip(
-                                valid_addr_df["소분류_캐시"],
-                                valid_addr_df["사업장주소"]
-                            )
-                        )
-
-                        for so in raw_so:
-                            priority = 5
-                            address = str(addr_map.get(so, "")).strip()
-
-                            if address.startswith("서울"):
-                                priority = 1
-                            elif address.startswith("인천"):
-                                priority = 2
-                            elif address.startswith("경기"):
-                                priority = 3
-                            elif address.startswith("강원"):
-                                priority = 4
-
-                            so_priority[so] = priority
-                    else:
-                        for so in raw_so:
-                            so_priority[so] = 5
-
-                    so_options = sorted(
-                        raw_so,
-                        key=lambda x: (so_priority[x], str(x))
-                    )
-
-                    if "집단상가" not in so_options:
-                        so_options.insert(0, "집단상가")
-
-                    # 보유처 목록
-                    owner_options = sorted(
-                        [
-                            str(v)
-                            for v in df[real_boyu].dropna().unique().tolist()
-                            if str(v).strip()
-                        ]
-                    )
-
-                    # 파일별 고정 옵션 저장
-                    st.session_state["_filter_model_options"] = model_options
-                    st.session_state["_filter_color_options"] = color_options
-                    st.session_state["_filter_dae_options"] = dae_options
-                    st.session_state["_filter_so_options"] = so_options
-                    st.session_state["_filter_owner_options"] = owner_options
-                    st.session_state["_filter_option_file"] = current_filter_file
-
-                    # 새 파일이 업로드되면 이전 선택을 정리하고
-                    # URL에 있는 모델/대분류/색상 조건만 복원합니다.
-                    init_models = st.session_state.get("filter_selected_models", _qp_list("m"))
-                    init_dae = st.session_state.get("filter_selected_dae", _qp_list("d"))
-                    init_colors = [str(x) for x in st.session_state.get("filter_selected_colors", _qp_list("c"))]
-
-                    st.session_state["filter_selected_models"] = [
-                        x for x in init_models
-                        if x in model_options
-                    ]
-
-                    st.session_state["filter_selected_dae"] = [
-                        x for x in init_dae
-                        if x in dae_options
-                    ]
-
-                    st.session_state["filter_selected_colors"] = [
-                        x for x in color_options
-                        if str(x) in init_colors
-                    ]
-
-                    st.session_state["filter_selected_so"] = [x for x in st.session_state.get("filter_selected_so", []) if x in so_options]
-                    st.session_state["filter_selected_owners"] = [x for x in st.session_state.get("filter_selected_owners", []) if x in owner_options]
-                    st.session_state.pop("filter_owner_option_signature", None)
-                    st.session_state.pop("filter_owner_keyword_message", None)
-
-                    # 새 파일 업로드 시 멀티셀렉트 위젯 세대 초기화
-                    st.session_state["filter_generation_model"] = 0
-                    st.session_state["filter_generation_dae"] = 0
-                    st.session_state["filter_generation_color"] = 0
-                    st.session_state["filter_generation_so"] = 0
-                    st.session_state["filter_generation_owner"] = 0
-
-                # --------------------------------------------------------------
-                # 3. 저장된 고정 옵션 불러오기
-                # --------------------------------------------------------------
-                model_options = st.session_state.get(
-                    "_filter_model_options", []
-                )
-                color_options = st.session_state.get(
-                    "_filter_color_options", []
-                )
-                dae_options = st.session_state.get(
-                    "_filter_dae_options", []
-                )
-                so_options = st.session_state.get(
-                    "_filter_so_options", []
-                )
-                owner_options = st.session_state.get(
-                    "_filter_owner_options", []
-                )
-
-                # --------------------------------------------------------------
-                # 4. 멀티셀렉트 선택 상태 초기화
-                # --------------------------------------------------------------
-                selection_keys = [
-                    "filter_selected_models",
-                    "filter_selected_colors",
-                    "filter_selected_dae",
-                    "filter_selected_so",
-                    "filter_selected_owners",
-                ]
-
-                generation_keys = [
-                    "filter_generation_model",
-                    "filter_generation_color",
-                    "filter_generation_dae",
-                    "filter_generation_so",
-                    "filter_generation_owner",
-                ]
-
-                for selection_key in selection_keys:
-                    if selection_key not in st.session_state:
-                        st.session_state[selection_key] = []
-
-                for generation_key in generation_keys:
-                    if generation_key not in st.session_state:
-                        st.session_state[generation_key] = 0
-
-                # --------------------------------------------------------------
-                # Keep widget identity stable across fragment/full reruns.
-                def _commit_and_close_multiselect(widget_key, selected_key, generation_key):
-                    st.session_state[selected_key] = list(st.session_state.get(widget_key, []))
-                    st.session_state["_recovery_fresh"] = False
-
-                def _closed_multiselect(label, options, selected_key, generation_key,
-                                        widget_prefix, placeholder):
-                    current_values = [v for v in st.session_state.get(selected_key, []) if v in options]
-                    st.session_state[selected_key] = current_values
-                    widget_key = f"{widget_prefix}_0"
-                    # Reconcile only before widget creation, including linked option changes.
-                    if list(st.session_state.get(widget_key, [])) != current_values or widget_key not in st.session_state:
-                        st.session_state[widget_key] = current_values
-                    st.multiselect(
-                        label, options=options, placeholder=placeholder, key=widget_key,
-                        on_change=_commit_and_close_multiselect,
-                        args=(widget_key, selected_key, generation_key),
-                    )
-                    return list(st.session_state[selected_key])
-
-                # --------------------------------------------------------------
-                # 7. 첫 번째 검색줄: 모델 / 대분류 / 색상
-                # --------------------------------------------------------------
-                c_model, c_dae, c_color = st.columns(3)
-
-                with c_model:
-                    selected_models = _closed_multiselect(
-                        label="모델",
-                        options=model_options,
-                        selected_key="filter_selected_models",
-                        generation_key="filter_generation_model",
-                        widget_prefix="filter_multiselect_model",
-                        placeholder="모델을 검색하거나 선택하세요",
-                    )
-
-                with c_dae:
-                    selected_dae = _closed_multiselect(
-                        label="지역(대분류)",
-                        options=dae_options,
-                        selected_key="filter_selected_dae",
-                        generation_key="filter_generation_dae",
-                        widget_prefix="filter_multiselect_dae",
-                        placeholder="미선택 시 전체",
-                    )
-
-                with c_color:
-                    if real_color:
-
-                        # ------------------------------------------------------
-                        # 선택된 모델에 존재하는 색상만 추출
-                        # ------------------------------------------------------
-                        if selected_models:
-                            color_filter_df = df[
-                                df[real_model]
-                                .astype(str)
-                                .isin([str(v) for v in selected_models])
-                            ]
-
-                            linked_color_options = sorted(
-                                [
-                                    value
-                                    for value in (
-                                        color_filter_df[real_color]
-                                        .dropna()
-                                        .unique()
-                                        .tolist()
-                                    )
-                                    if str(value).strip()
-                                ],
-                                key=lambda value: str(value),
-                            )
-
-                            if len(selected_models) == 1:
-                                color_placeholder = (
-                                    f"{selected_models[0]}의 색상을 선택하세요"
-                                )
-                            else:
-                                color_placeholder = (
-                                    f"선택한 {len(selected_models)}개 모델의 "
-                                    "색상을 선택하세요"
-                                )
-
-                        else:
-                            # 모델 미선택 시에는 전체 색상 표시
-                            linked_color_options = color_options
-                            color_placeholder = "색상을 검색하거나 선택하세요"
-
-                        selected_colors = _closed_multiselect(
-                            label="색상",
-                            options=linked_color_options,
-                            selected_key="filter_selected_colors",
-                            generation_key="filter_generation_color",
-                            widget_prefix="filter_multiselect_color",
-                            placeholder=color_placeholder,
-                        )
-
-                    else:
-                        selected_colors = []
-                        st.session_state["filter_selected_colors"] = []
-                        st.write("-")
-
-                # --------------------------------------------------------------
-                # 8. 두 번째 검색줄: 소분류 / 보유처
-                # --------------------------------------------------------------
-                c_region_so, c_owner = st.columns(2)
-
-                with c_region_so:
-                    selected_so = _closed_multiselect(
-                        label="지역(소분류)",
-                        options=so_options,
-                        selected_key="filter_selected_so",
-                        generation_key="filter_generation_so",
-                        widget_prefix="filter_multiselect_so",
-                        placeholder="미선택 시 전체",
-                    )
-
-                with c_owner:
-                    # 조회와 동일한 조건 적용 (사무실/집단상가/소분류 유추불가 포함).
-                    # 보유처 자체는 조건에 넣지 않아 추가 선택이 가능합니다.
-                    owner_filter_df, _ = get_cached_search_results(
-                        df, tuple(selected_models), tuple(selected_colors), (),
-                        tuple(selected_dae), tuple(selected_so),
-                        real_model, real_color, real_boyu,
-                    )
-                    linked_owner_options = sorted({
-                        str(value)
-                        for value in owner_filter_df[real_boyu].dropna().unique()
-                        if str(value).strip()
-                    })
-                    owner_signature = tuple(linked_owner_options)
-                    previous_owners = st.session_state["filter_selected_owners"]
-                    current_owners = [
-                        value for value in previous_owners
-                        if value in linked_owner_options
-                    ]
-                    removed_count = len(previous_owners) - len(current_owners)
-                    st.session_state["filter_selected_owners"] = current_owners
-
-                    owner_options_changed = (
-                        st.session_state.get("filter_owner_option_signature")
-                        != owner_signature
-                    )
-                    st.session_state["filter_owner_option_signature"] = owner_signature
-
-                    def _select_owners_by_keyword():
-                        event = st.session_state.get("filter_owner_enter", {})
-                        keyword = str(event.get("keyword") or "").strip().casefold()
-                        if not keyword:
-                            return
-                        # 이벤트 발생 시점의 최신 옵션/선택을 사용합니다.
-                        options = st.session_state.get("filter_owner_option_signature", ())
-                        current = [
-                            value for value in st.session_state.get("filter_selected_owners", [])
-                            if value in options
-                        ]
-                        matches = [value for value in options if keyword in value.casefold()]
-                        additions = [value for value in matches if value not in current]
-                        st.session_state["filter_selected_owners"] = current + additions
-                        st.session_state["tmp_selected_owners"] = current + additions
-                        st.session_state["filter_owner_keyword_message"] = (
-                            f"일치 {len(matches)}곳 · 새로 추가 {len(additions)}곳"
-                            if matches else "현재 조건에서 일치하는 보유처가 없습니다."
-                        )
-                        st.session_state["filter_multiselect_owner_0"] = current + additions
-                        st.session_state["_recovery_fresh"] = False
-
-                    selected_owners = _closed_multiselect(
-                        label="보유처",
-                        options=linked_owner_options,
-                        selected_key="filter_selected_owners",
-                        generation_key="filter_generation_owner",
-                        widget_prefix="filter_multiselect_owner",
-                        placeholder="보유처 검색 · Enter로 일치 항목 모두 선택",
-                    )
-                    _owner_enter_component()(
-                        key="filter_owner_enter",
-                        data={"options": linked_owner_options, "widget_key": (
-                            "filter_multiselect_owner_0"
-                        )},
-                        on_keyword_change=_select_owners_by_keyword,
-                        height=0,
-                    )
-                    message = st.session_state.pop("filter_owner_keyword_message", None)
-                    if message:
-                        st.caption(message)
-                    if removed_count:
-                        st.caption(f"조건에 맞지 않는 기존 선택 {removed_count}곳을 해제했습니다.")
-
-                # --------------------------------------------------------------
-                # 9. 기존 조회 버튼에 최신 선택 상태 전달
-                # --------------------------------------------------------------
-                st.session_state["tmp_selected_models"] = selected_models
-                st.session_state["tmp_selected_colors"] = selected_colors
-                st.session_state["tmp_selected_dae"] = selected_dae
-                st.session_state["tmp_selected_so"] = selected_so
-                st.session_state["tmp_selected_owners"] = selected_owners
-
-            # 검색창 영역만 독립 실행
-            search_filter_section()
-
-            # ⚠️ 슬롯은 반드시 마커보다 '위'에 있어야 합니다.
-            #    마커와 버튼 사이에 두면 CSS 선택자(+ div)가 버튼을 못 찾습니다.
-            _btn_css = st.empty()   # 실행 중 버튼 문구 변경용 (렌더 완료 후 원복)
-
-            # 🚀 [버튼을 밖으로 꺼냄] 이 버튼을 누르면 "무조건" 전체 화면(지도 포함)이 새로고침 됩니다!
-            st.markdown('<span class="search-btn-marker"></span>', unsafe_allow_html=True)
-            
-            search_requested = st.button("🚀 조회하기", key="inventory_search_button", use_container_width=True)
-            st.markdown(
-                '<div id="inventory-connection-status" role="status" aria-live="polite" '
-                'hidden style="background:#182c24;color:#E5E9F0;padding:10px 12px;'
-                'border-radius:8px;margin:4px 0;"></div>',
-                unsafe_allow_html=True,
-            )
-            if search_requested:
-                st.session_state["_recovery_fresh"] = False
-                # Fragment가 방금 저장해둔 최신 조건들을 불러옵니다
-                s_models = st.session_state.get('tmp_selected_models', [])
-                s_colors = st.session_state.get('tmp_selected_colors', [])
-                s_dae = st.session_state.get('tmp_selected_dae', [])
-                s_so = st.session_state.get('tmp_selected_so', [])
-                s_owners = st.session_state.get('tmp_selected_owners', [])
-
-                is_specific_owner = bool(s_owners)
-                if not s_models and not is_specific_owner:
-                    st.warning("⚠️ 모델을 선택하거나, 특정 보유처를 선택해주세요.")
-                    st.session_state['filtered_data'] = None 
-                else:
-                    st.session_state['search_clicked'] = True
-                    st.session_state['_searching'] = True   # 결과 렌더링까지 스피너 유지용
-
-                    # ② 실행 중 — 버튼 문구 변경 + 중복 클릭 차단
-                    _btn_css.markdown("""
-                        <span class="btn-css-slot"></span>
-                        <style>
-                        /* CSS만 담는 슬롯이므로 화면에서 완전히 제거 (밀림 방지) */
-                        div[data-testid="stElementContainer"]:has(.btn-css-slot),
-                        div.element-container:has(.btn-css-slot) {
-                            display: none !important;
-                            height: 0px !important;
-                            margin: 0px !important;
-                            padding: 0px !important;
-                        }
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
-                            border: 2px solid #D4AF37 !important;
-                            background-color: rgba(212,175,55,0.15) !important;
-                            pointer-events: none !important;
-                        }
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button p,
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button > div,
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button span {
-                            visibility: hidden !important;
-                            position: absolute !important;
-                        }
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button {
-                            position: relative !important;
-                        }
-                        div[data-testid="stElementContainer"]:has(.search-btn-marker) + div button::after {
-                            content: "🔍 조회하는 중입니다...";
-                            position: absolute;
-                            top: 0; left: 0; right: 0; bottom: 0;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            font-size: 18px;
-                            font-weight: 600;
-                            color: #D4AF37;
-                        }
-                        </style>
-                    """, unsafe_allow_html=True)
-                    
-                    list_res, map_res = get_cached_search_results(
-                        df, 
-                        tuple(s_models), 
-                        tuple(s_colors) if s_colors else tuple(), 
-                        tuple(s_owners) if s_owners else tuple(), 
-                        tuple(s_dae) if s_dae else tuple(), 
-                        tuple(s_so) if s_so else tuple(),
-                        real_model, real_color, real_boyu
-                    )
-                    
-                    st.session_state['_last_search_conditions'] = dict(models=s_models, colors=s_colors, owners=s_owners, dae=s_dae, so=s_so)
-                    st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
-                    st.session_state['selected_idx'] = None
-                    st.session_state['clicked_store_name'] = None
-
-                    # 🚀 [URL 저장] 모바일 복귀 시 조건 복원용 (보유처 제외 — URL 길이 초과 방지)
-                    try:
-                        _qp_new = {}
-                        if s_models: _qp_new['m'] = list(s_models)
-                        if s_dae:    _qp_new['d'] = list(s_dae)
-                        if s_colors: _qp_new['c'] = list(s_colors)
-                        st.query_params.clear()
-                        if _qp_new:
-                            st.query_params.update(_qp_new)
-                    except Exception as _qe:
-                        print(f"[URL 저장 실패] {_qe}")
-
-        if st.session_state.pop("_restore_last_result", False):
-            last = st.session_state.get("_last_search_conditions") or {}
-            if all(isinstance(last.get(k, []), list) and all(isinstance(v, str) for v in last.get(k, [])) for k in ("models", "colors", "owners", "dae", "so")) and df is not None:
-                list_res, map_res = get_cached_search_results(
-                    df, tuple(last.get("models", [])), tuple(last.get("colors", [])),
-                    tuple(last.get("owners", [])), tuple(last.get("dae", [])),
-                    tuple(last.get("so", [])), real_model, real_color, real_boyu,
-                )
-                st.session_state['filtered_data'] = {'list': list_res, 'map': map_res}
-
-        # 4. 결과 출력
-        # 🚀 [최적화 2] 결과 화면(지도+리스트)을 독립된 구역(Fragment)으로 분리
-        @st.fragment
-        def display_results_section():
-            if st.session_state.get('filtered_data') is not None:
-                data = st.session_state['filtered_data']
-                list_df = data['list']
-                map_df = data['map']
-
-                st.markdown("""
-                    <style>
-                        div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stVerticalBlock"]) { gap: 0rem !important; }
-                    </style>
-                """, unsafe_allow_html=True)
-
-                # [수정] 엑셀 다운로드 버튼을 삭제하고 제목만 깔끔하게 출력
-                owner_count = len(st.session_state.get("filter_owner_option_signature", ()))
-                selected_owner_count = len(st.session_state.get("filter_selected_owners", []))
-                st.markdown(
-                    f"<h3 style='margin: 0px; padding: 0px; padding-top: 5px; color: #E8D5A5;'>"
-                    f"검색 총수량 ({len(list_df)}건) "
-                    f"<span style='font-size: 14px; font-weight: normal;'>"
-                    f"현재 조건의 보유처 {owner_count}개 · 선택 보유처 {selected_owner_count}개. ",
-                    unsafe_allow_html=True,
-                )
-                st.markdown("---")
-
-                if not list_df.empty:
-                    map_col, list_col = st.columns([6, 4])
-
-                    # 왼쪽: 지도 뷰
-                    with map_col:
-                        clicked_name = st.session_state['clicked_store_name']
-                        
-                        if not map_df.empty:
-                            # 🚀 [추가] 파이썬이 NaN을 무시해서 마커가 증발하는 현상 방어
-                            map_df = map_df.copy()
-                            fallback_col = next((c for c in map_df.columns if '보유처' in c and c != real_boyu), None)
-                            if fallback_col:
-                                map_df[real_boyu] = map_df[real_boyu].fillna("⚠️ " + map_df[fallback_col].astype(str) + " (미매칭)")
-                            else:
-                                map_df[real_boyu] = map_df[real_boyu].fillna("⚠️ 미등록 보유처")
-
-                            min_lat = float(map_df['cached_lat'].min())
-                            max_lat = float(map_df['cached_lat'].max())                   
-                            min_lon = float(map_df['cached_lon'].min())
-                            max_lon = float(map_df['cached_lon'].max())
-
-                            c_lat = (min_lat + max_lat) / 2.0
-                            c_lon = (min_lon + max_lon) / 2.0
-
-                            # 🚀 [최적화 1] 지도를 그리기 직전에만 무거운 모듈을 불러옵니다 (Lazy Import)
-                            import folium
-                            from folium.features import DivIcon
-                            from streamlit_folium import st_folium
-                            from branca.element import Element 
-                          
-                            # 1. 안전한 기본 지도 생성
-                            m = folium.Map(location=[c_lat, c_lon], zoom_start=10, attributionControl=False)
-                            m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], max_zoom=12)
-                            
-                            folium.TileLayer(
-                                 tiles='https://api.vworld.kr/req/wmts/1.0.0/0580472E-D858-365E-968B-F1FCE560F381/Base/{z}/{y}/{x}.png',
-                                 attr='VWorld',
-                                 name='브이월드 (한국형 상세지도)',
-                                 overlay=True,
-                                 control=True
-                             ).add_to(m)
-                            
-                            # 우측 상단에 레이어 컨트롤러(설정창) 표시
-                            # folium.LayerControl(position='topright').add_to(m)
-
-                            # 🚀 [새로운 모바일 전용 제어 로직]
-                            # 데스크탑: 클릭 드래그(이동), 휠(확대/축소) - 원래대로 자유롭게 유지
-                            # 모바일: 한 손가락은 페이지 스크롤, '두 손가락'일 때만 지도 조작 가능
-                            
-                            map_id = m.get_name()
-                            mobile_js = f"""
-                            <script>
-                            var map_obj = {map_id};
-                            // 접속 기기가 모바일(터치 기기)인지 확인
-                            if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {{
-                                // 1. 모바일에서는 기본 드래그와 줌을 일단 비활성화 (페이지 스크롤 방해 방지)
-                                map_obj.dragging.disable();
-                                map_obj.touchZoom.disable();
-                                
-                                // 2. 손가락이 2개 이상(멀티터치)일 때만 기능을 켬
-                                map_obj.on('touchstart', function(e) {{
-                                    if (e.touches.length > 1) {{
-                                        map_obj.dragging.enable();
-                                        map_obj.touchZoom.enable();
-                                    }}
-                                }});
-                                
-                                // 3. 터치가 끝나면 다시 기능을 꺼서 실수로 지도가 움직이지 않게 방어
-                                map_obj.on('touchend', function(e) {{
-                                    map_obj.dragging.disable();
-                                    map_obj.touchZoom.disable();
-                                }});
-                            }}
-                            </script>
-                            """
-                            # 지도의 루트 HTML에 스크립트 주입
-                            m.get_root().html.add_child(Element(mobile_js))
-                            
-                            # [주의] 사내망 방화벽 충돌을 막기 위해 클러스터링(MarkerCluster)을 제거하고 원복했습니다.
-
-                            # 🚀 [최적화 ⓐ] 마커마다 groupby를 반복하지 않도록 전체를 한 번에 집계
-                            _agg_cols = [real_model]
-                            if real_color:  _agg_cols.append(real_color)
-                            if real_type:   _agg_cols.append(real_type)
-                            if real_status: _agg_cols.append(real_status)
-                            if real_target: _agg_cols.append(real_target)
-
-                            _grp_keys = ['cached_lat', 'cached_lon', real_boyu]
-                            _summary_all = (map_df.groupby(_grp_keys + _agg_cols, dropna=False)
-                                                  .size().reset_index(name='count'))
-                            _summary_map = {k: v for k, v in _summary_all.groupby(_grp_keys, dropna=False)}
-                            _empty_summary = _summary_all.iloc[0:0]
-
-                            groups = map_df.groupby(_grp_keys)
-
-                            for (lat, lon, name), g in groups:
-                                if pd.isna(lat) or pd.isna(lon):
-                                    continue
-                                    
-                                u_cols = g[real_color].unique()
-                                is_office = "반추" in str(name)
-                                
-                                if len(u_cols) == 1:
-                                    c_name = u_cols[0]
-                                    hex_c, _ = get_real_color(c_name)
-                                    # 변경: 밝은 색은 어두운 배경 위에 올려서 흰 배경에 묻히지 않게 함
-                                    if _get_luminance(hex_c) > 0.75:
-                                        bg_c, ic_c = "rgba(35,35,35,0.75)", hex_c
-                                    else:
-                                        bg_c, ic_c = "rgba(255,255,255,0.85)", hex_c
-                                else: bg_c, ic_c = "transparent; background: linear-gradient(135deg, red, orange, yellow, green, blue, purple)", "white"
-
-                                z = 1000 if st.session_state['clicked_store_name'] == name else 1
-                                if st.session_state['clicked_store_name'] == name: bg_c, ic_c = "rgba(255,0,0,0.85)", "white"
-
-                                icon_shape = "fa-mobile"
-                                border_style = "border-radius: 50%;"
-                                
-                                if is_office:
-                                    icon_shape = "fa-star"
-                                    bg_c = "rgba(255, 0, 0, 0.9)"
-                                    ic_c = "white"
-                                    border_style = "border-radius: 10%; border: 2px solid white;"
-
-                                t_rows = ""
-                                td_style = "border:1px solid #aaa; padding:5px; text-align:center;"
-                                
-                                uid = f"store_{hashlib.md5((str(name)+str(lat)+str(lon)).encode()).hexdigest()}"
-                                missing_address = all(
-                                    is_address_missing(value, name)
-                                    for value in g.get('사업장주소', pd.Series([None]))
-                                )
-                                popup_title = f"{name}" + (" · 주소 미등록" if missing_address else "")
-                                if missing_address:
-                                    border_style += " border: 2px dashed #EF4444;"
-                                
-                                address_txt = ""
-                                if is_office:
-                                    address_txt = "서울특별시 영등포구 경인로775 에이스하이테크 417호"
-                                elif not missing_address:
-                                    address_txt = next(str(value).strip() for value in g['사업장주소'] if not is_address_missing(value, name))
-                                else:
-                                    address_txt = "주소 미등록"
-
-                                from html import escape
-                                guessed_regions = list(dict.fromkeys(
-                                    str(value).strip() for value in g.get('추정지역', pd.Series(dtype=str)).dropna()
-                                    if str(value).strip()
-                                ))
-                                popup_address_txt = (
-                                    "추정 위치: " + ' / '.join(guessed_regions) + " 인근"
-                                    if missing_address and guessed_regions else address_txt
-                                )
-                                popup_address_html = escape(popup_address_txt, quote=True)
-                                # 팝업과 복사 문구에 동일한 K노트 연락처를 표시합니다.
-                                contact_values = g.get('K노트 연락처', pd.Series(dtype=str))
-                                contacts = list(dict.fromkeys(
-                                    str(value).strip() for value in contact_values.dropna()
-                                    if str(value).strip() not in ('', '미등록', '미확인')
-                                ))
-                                contact_txt = ' / '.join(contacts) if contacts else (
-                                    '미확인' if '미확인' in contact_values.astype(str).tolist() else '미등록'
-                                )
-                                contact_html = escape(contact_txt, quote=True)
-
-                                # [핵심 수정] 복사될 텍스트의 첫 줄에 "반추 재고요청드립니다" 추가
-                                copy_text_lines = ["반추 재고요청드립니다", "", f"[{popup_title}]", f"📍 {address_txt}", f"☎ K노트 연락처 : {contact_txt}", ""]
-                                
-                                # --- [최적화] 루프 밖에서 미리 집계해둔 결과를 조회만 함 ---
-                                summary_g = _summary_map.get((lat, lon, name), _empty_summary)
-                                
-                                for _, r in summary_g.iterrows():
-                                    cn = r[real_color] if real_color and pd.notna(r[real_color]) else "-"
-                                    typ = r[real_type] if real_type and pd.notna(r[real_type]) else "-" # 👈 [추가] 모델유형 데이터 추출
-                                    stt = r[real_status] if real_status and pd.notna(r[real_status]) else "-"
-                                    
-                                    if "반추" in str(name):
-                                        tgt = "-"
-                                    else:
-                                        tgt = r[real_target] if real_target and pd.notna(r[real_target]) else "-"
-                                        
-                                    qty = r['count']
-                                    
-                                    # [수정] 표 내용(td)에 유형(typ) 추가
-                                    t_rows += f"<tr><td style='{td_style}'>{r[real_model]}</td><td style='{td_style}'>{cn}</td><td style='{td_style}'>{typ}</td><td style='{td_style}'>{stt}</td><td style='{td_style}'>{tgt}</td><td style='{td_style}'>{qty}</td></tr>"
-                                    
-                                    # [수정] 복사하기 텍스트에도 유형(typ) 추가
-                                    copy_text_lines.append(f"{r[real_model]} | {cn}")
-                                    
-                                # 1. 기본 복사 텍스트 세팅
-                                from html import escape
-                                copy_text = "&#10;".join(escape(str(line), quote=False) for line in copy_text_lines) + "&#10;&#10;사용가능할까요?"
-
-                                # 2. HTML 팝업창 렌더링 (주석 제거 및 에러 완벽 방지)
-                                popup_html = f"""
-                                <div style='width:100%; min-width:280px; max-width:350px; font-family:sans-serif;'>
-                                    
-                                    <div style='font-size:14px; font-weight:bold; color:#000; margin-bottom:8px; text-align:center; position:relative;'>
-                                        {popup_title}
-                                        <textarea id='base_text_{uid}' style='display:none;'>{copy_text}</textarea>
-                                        <i class="fa fa-clipboard" style="cursor:pointer; position:absolute; right:5px; top:0px; font-size:16px; color:#4a90e2;" onclick="
-                                            const notify = (message, isError=false) => {{
-                                                const target = document.getElementById('copy_status_{uid}');
-                                                if (!target) return;
-                                                clearTimeout(target._feedbackTimer);
-                                                target.textContent = message;
-                                                target.style.color = isError ? '#b91c1c' : '#166534';
-                                                target.hidden = false;
-                                                target._feedbackTimer = setTimeout(() => {{ target.hidden = true; }}, isError ? 5000 : 2500);
-                                            }};
-                                            try {{
-                                                var nl = String.fromCharCode(10);
-                                                var base = document.getElementById('base_text_{uid}').value;
-                                                var memo = document.getElementById('memo_{uid}').value.trim();
-                                                var finalTxt = base;
-                                                
-                                                if(memo !== '') {{
-                                                    finalTxt += nl + memo + ' 이동예정입니다.';
-                                                }}
-                                                
-                                                var tempTa = document.createElement('textarea');
-                                                tempTa.value = finalTxt;
-                                                tempTa.style.position = 'fixed';
-                                                document.body.appendChild(tempTa);
-                                                tempTa.select();
-                                                var success = document.execCommand('copy');
-                                                document.body.removeChild(tempTa);
-                                                
-                                                if(success) {{
-                                                    notify('✅ 목록이 복사되었습니다!');
-                                                }} else {{
-                                                    notify('⚠️ 복사에 실패했습니다. 브라우저 설정을 확인해주세요.', true);
-                                                }}
-                                            }} catch(err) {{
-                                                notify('⚠️ 복사 중 오류가 발생했습니다. 다시 시도해주세요.', true);
-                                            }}
-                                        " title="내용 복사"></i>
-                                    </div>
-                                    
-                                    <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:3px; word-break:keep-all;'>
-                                        📍 {popup_address_html}
-                                    </div>
-                                    <div style='font-family:inherit; font-size:11px; font-weight:normal; line-height:1.5; color:#555; text-align:center; margin-bottom:8px; border-bottom:1px solid #ddd; padding-bottom:5px; word-break:keep-all;'>
-                                        ☎ K노트 연락처 : {contact_html}
-                                    </div>
-
-                                    <div style='margin-bottom:8px; text-align:center;'>
-                                        <input type='text' id='memo_{uid}' placeholder='이동할 곳을 입력하세요 · 이동예정입니다' 
-                                               style='width:95%; padding:5px; font-size:11px; border:1px solid #aaa; border-radius:4px; box-sizing:border-box;'>
-                                    </div>
-                                    
-                                    <div id='copy_status_{uid}' role='status' aria-live='polite' hidden
-                                         style='font-family:inherit; font-size:11px; text-align:center; margin:0 0 8px;'></div>
-                                    <div style='max-height: 150px; overflow-y: auto; border-bottom: 1px solid #eee;'>
-                                        <table style='width:100%; border-collapse:collapse; font-size:11px;'>
-                                            <thead>
-                                                <tr style='background-color:#f0f0f0; position: sticky; top: 0; z-index: 1;'>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>모델</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>색상</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>유형</th> 
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>상태</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>출고일</th>
-                                                    <th style='border:1px solid #aaa; padding:5px; text-align:center; white-space:nowrap;'>수량</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {t_rows}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                """
-                                
-                                icon_html = f"""
-                                <div style="
-                                    background-color: {bg_c};
-                                    color: {ic_c};
-                                    width: 24px;
-                                    height: 24px;
-                                    {border_style}
-                                    display: flex;
-                                    justify-content: center;
-                                    align-items: center;
-                                    font-size: 12px;
-                                    box-shadow: 1px 1px 3px rgba(0,0,0,0.3);">
-                                    <i class="fa {icon_shape}"></i>
-                                </div>
-                                """
-                                
-                                # 기존 방식대로 지도(m)에 직접 추가합니다.
-                                folium.Marker(
-                                    location=[lat, lon],
-                                    icon=folium.DivIcon(html=icon_html),
-                                    popup=folium.Popup(popup_html, max_width=400, max_height=250),
-                                    z_index_offset=z
-                                ).add_to(m)
-
-                            st_folium(m, width="100%", height=500, returned_objects=[], key="safe_map_view")
-
-                        else:
-                            st.info("지도 데이터 없음")
-
-                    # 오른쪽: 리스트 뷰
-                    with list_col:
-                        
-                        # 🚀 [업데이트] 라디오 버튼 모바일 한 줄 정렬 및 여백 극한 축소
-                        st.markdown("""
-                            <style>
-                            /* 1. 라디오 버튼 위에 숨어있는 투명한 라벨 공간 삭제 */
-                            div.stRadio > label { display: none !important; }
-                            
-                            /* 2. 라디오 버튼의 위/아래 위치 세밀 조절 (지도와 높이 맞춤) */
-                            div[data-testid="stRadio"] {
-                                margin-top: -20px !important; 
-                                margin-bottom: -10px !important; 
-                                margin-left: 15px !important;    
-                            }
-
-                            /* 3. 스크롤 박스 전체를 위로 끌어올리기 */
-                            div[data-testid="stScrollableContainer"] {
-                                margin-top: -15px !important; padding-top: 0px !important;
-                            }
-                            
-                            /* 4. 스크롤 컨테이너 내부 100개 버튼들 사이의 간격 촘촘하게 */
-                            div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] > div[data-testid="stVerticalBlock"] {
-                                gap: 1px !important; 
-                            }
-                            </style>
-                        """, unsafe_allow_html=True)
-                    
-                        col_s1, col_s2 = st.columns(2)
-                        with col_s1:
-                            sort_target = st.radio("기준", ["보유처명", "출고일순"], index=0, horizontal=True, label_visibility="collapsed")
-                        with col_s2:
-                            sort_direction = st.radio("방향", ["내림차순", "오름차순"], index=0, horizontal=True, label_visibility="collapsed")
-                        
-                        is_ascending = True if sort_direction == "오름차순" else False
-                        sort_by_col = real_target if sort_target == "출고일순" and real_target else real_boyu
-                        
-                        list_df = list_df.sort_values(by=sort_by_col, ascending=is_ascending)
-
-                        with st.container(height=500):
-                            for idx, row in list_df.head(100).iterrows():
-                                
-                                # 🚀 [수정] 'nan' 표시 방지 및 미매칭 시 원본 이름 출력
-                                raw_nm = row[real_boyu]
-                                if pd.isna(raw_nm) or str(raw_nm).lower() == 'nan':
-                                    # DB에 없어서 nan이 뜨면, 엑셀에 있던 다른 '보유처' 컬럼값을 찾아서 보여줌
-                                    fallback_col = next((c for c in list_df.columns if '보유처' in c and c != real_boyu), None)
-                                    if fallback_col and pd.notna(row[fallback_col]):
-                                        nm = f"⚠️ {str(row[fallback_col])} (미매칭)"
-                                    else:
-                                        nm = "⚠️ 미등록 보유처"
-                                else:
-                                    nm = str(raw_nm)
-                                
-                                r_mod = row[real_model] if pd.notna(row[real_model]) else '-'
-                                r_col = row[real_color] if real_color and pd.notna(row[real_color]) else '-'
-                                r_typ = row[real_type] if real_type and pd.notna(row[real_type]) else '-' 
-                                r_stat = row[real_status] if real_status and pd.notna(row[real_status]) else '-'
-                                
-                                if "반추" in nm:
-                                    r_tgt = "-"
-                                else:
-                                    r_tgt = row[real_target] if real_target and pd.notna(row[real_target]) else '-'
-                                    
-                                r_serial = str(row[real_serial]) if real_serial and pd.notna(row[real_serial]) else '-' 
-                                
-                                # [수정] 문자열 조립 시 r_col(색상)과 r_stat(상태) 사이에 r_typ(유형)을 끼워넣음
-                                det = f"{r_mod} | {r_col} | {r_typ} | {r_stat} | {r_tgt} | 일련 : {r_serial}"
-                                
-                                is_selected = st.session_state['clicked_store_name'] == str(row[real_boyu])
-                                prefix = "✅ " if is_selected else ""
-                                address_badge = " · 주소 미등록" if is_address_missing(row.get('사업장주소'), nm) else ""
-                                if row.get('위치표시방식') == '지역추정':
-                                    address_badge += f" · {row.get('추정지역', '')} 인근 추정"
-                                elif row.get('위치표시방식') == '추정불가':
-                                    address_badge += " · 위치 추정 불가"
-                                button_label = f"{prefix}{nm}{address_badge}  :  {det}"
-                                
-                                if st.button(button_label, key=f"btn_{idx}", use_container_width=True):
-                                    st.session_state['selected_idx'] = idx
-                                    st.session_state['clicked_store_name'] = str(row[real_boyu])
-                                    
-                else:
-                    st.warning("조건에 맞는 결과가 없습니다.")
-
-        # 조회 중 표시는 버튼 자체가 담당하므로 별도 스피너를 쓰지 않습니다.
-        st.session_state.pop('_searching', None)
-        display_results_section()
-
-        # 결과 렌더링이 끝났으므로 조회하기 버튼 문구를 원래대로 되돌립니다.
-        try:
-            _btn_css.empty()
-        except NameError:
-            pass
-
-        # Mount recovery only after the entire result has finished rendering.
+            file_stat = os.stat(DATA_FILE)
+            _inv_dashboard(df, (file_stat.st_mtime_ns, file_stat.st_size), 'https://api.vworld.kr/req/wmts/1.0.0/0580472E-D858-365E-968B-F1FCE560F381/Base/{z}/{y}/{x}.png')
+        else:
+            _inv_source_header()
         render_recovery_bridge()
