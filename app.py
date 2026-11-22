@@ -1800,10 +1800,14 @@ def _inv_payload(matched, reference, cols, conditions, version, tile_url):
                 created=datetime.now(timezone(timedelta(hours=9))).strftime('%m/%d %H:%M:%S'))
 
 
-@st.cache_resource
-def _inv_results_component():
+def _inv_asset_version():
+    return hashlib.sha256((_INV_RESULTS_JS+'\x00'+_INV_RESULTS_CSS).encode()).hexdigest()[:12]
+
+
+@st.cache_resource(max_entries=4)
+def _inv_results_component(asset_version):
     import streamlit.components.v2 as components_v2
-    return components_v2.component('inventory_results_v3',
+    return components_v2.component('inventory_results_'+asset_version,
                                   html='<div class="inventory-results-root"></div>',
                                   css=_INV_RESULTS_CSS, js=_INV_RESULTS_JS)
 
@@ -1935,6 +1939,7 @@ def _inv_dashboard(frame, file_version, tile_url):
         normalized_last['serial'] = str(last.get('serial') or '')
         if draft != normalized_last:
             st.caption('조건이 변경됐습니다. 아래 결과는 이전 조회 기준이며, 조회하면 적용됩니다.')
+    asset_version=_inv_asset_version()
     st.session_state.pop('_restore_last_result', None)
     if last is not None:
         # A restored browser payload is untrusted data: keep only known filter types.
@@ -1948,11 +1953,11 @@ def _inv_dashboard(frame, file_version, tile_url):
             matched, reference = _inv_filter(frame, last, cols)
             st.session_state['_inv_payload'] = _inv_payload(matched, reference, cols, last, signature, tile_url)
             st.session_state['_inv_payload_key'] = signature
-        _inv_results_component()(key='inventory_results_v3', data=st.session_state['_inv_payload'])
+        _inv_results_component(asset_version)(key='inventory_results_'+asset_version, data=st.session_state['_inv_payload'])
     else:
-        _inv_results_component()(key='inventory_results_v3', data={'version':'empty', 'records':[], 'empty':True})
+        _inv_results_component(asset_version)(key='inventory_results_'+asset_version, data={'version':'empty', 'records':[], 'empty':True})
     user = escape(str(st.session_state.get('username', '')))
-    st.markdown('<div class="inv-footer"><span>DB 캐시 사용 · 갱신 버튼으로 재확인</span><span>'+user+'</span></div>', unsafe_allow_html=True)
+    st.markdown('<div class="inv-footer"><span>DB 캐시 사용 · 화면 버전 '+asset_version[:8]+'</span><span>'+user+'</span></div>', unsafe_allow_html=True)
 
 
 _INV_FILTER_CSS = """<style>
