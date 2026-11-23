@@ -1674,7 +1674,7 @@ def _inv_map_tile_url(default_url):
     from urllib.parse import quote
     try:
         settings=st.secrets.get('maps',{})
-        key=settings.get('vworld_key') or st.secrets.get('VWORLD_API_KEY')
+        key=settings.get('vworld_key') or st.secrets.get('1BDFF1F8-2295-4617-A5FF-8447B1096D76')
     except Exception:key=None
     if not key:return default_url
     return re.sub(r'(/wmts/1\.0\.0/)[^/]+',lambda match:match.group(1)+quote(str(key).strip(),safe=''),default_url)
